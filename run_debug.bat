@@ -1,0 +1,2 @@
+cd ..
+@nwd atmegaIDE 

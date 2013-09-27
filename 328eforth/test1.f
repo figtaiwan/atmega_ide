@@ -1,0 +1,5 @@
+\ test1.f
+: test BASE @ HEX LAST @
+  BEGIN DUP . ?DUP
+  WHILE DUP SPACE .ID 2- I@
+  REPEAT BASE ! ;

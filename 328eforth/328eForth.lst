@@ -1,0 +1,4616 @@
+
+AVRASM ver. 2.1.42  C:\ksanapc\ide328_2\328eForth.asm Thu Sep 26 21:33:20 2013
+
+C:\ksanapc\ide328_2\328eForth.asm(4): Including file 'C:\Program Files (x86)\Atmel\AVR Tools\AvrAssembler2\Appnotes\m328Pdef.inc'
+C:\ksanapc\ide328_2\328eForth.asm(3078): warning: Register r20 already defined by the .DEF directive
+                 
+                 
+                 
+                 .list
+                 
+                 ;===============================================================
+                 ;
+                 ;	328eFORTH DEV 0.74 2013/09/26
+                 ;		每次要讀取一列輸入字串前 先送出 Acknowledge $06
+                 ;	328eFORTH DEV 0.73 2013/09/14
+                 ;		fix abort" and save as uft-8
+                 ;	328eFORTH DEV 0.72 2013/08/16
+                 ;		move out heads of WRITE and ERASE from Bootloader Area
+                 ;   328eFORTH DEV 0.72 2013/08/13
+                 ;		reveal all hidden words (those of no name)
+                 ;   328eFORTH DEV 0.71 2012/10/30
+                 ;       keep whole Arduino boot loader
+                 ;       reamin only ERASE, WRITE, READ in boot loader area
+                 ;		all other words moved out
+                 ;		so that we can directly use .bat to burn .hex
+                 ;	328eFORTH DEV 0.6
+                 ;		INTERRUPT TESTING
+                 ;   328eFORTH DEV 0.5
+                 ;		'CN find cfa and nfa
+                 ;   328eFORTH DEV 0.4
+                 ;       ALLOW_BOOT   2012/8/30
+                 ;   328eFORTH DEV 0.3
+                 ;       ERR_HANDLING 2012/8/23       
+                 ;   328eForth DEV 0.1, Albert, 2012/5/2
+                 ;		Allow defining chinese words 
+                 ;	328eForth v2.20, Chen-Hanson Ting, July 2011
+                 ;		Fix error, quit, 2/ and ?stack
+                 ;
+                 ;	328eForth v2.10, Chen-Hanson Ting, March 2011
+                 ;	Adapted from 
+                 ;		86se4th.asm by Richard Haskell 
+                 ;		Amforth by Matthias Trute
+                 ;	Assembled with AVR Studio 4 from Atmel
+                 ;	-Subroutine threaded model
+                 ;	-Uniform byte addressing for flash, RAM and registers
+                 ;	-Ping-pong block buffers for optimal flash programming
+                 ;	-FORTH interpreter & tools are in NRWW flash
+                 ;	-FORTH compiler & user extension are in RWW flash
+                 ;	-No interrupt, no multitasking 
+                 ;	-turnkey capability
+                 ;	-Case insensitive
+                 ;	-9600 baud, 1 start, 8 data, no parity, 1 stop bit
+                 ;	ANS FORTH compatible, but not compliant.
+                 ;
+                 ;	Subroutine threaded eForth; Version. 1.0, 1991 
+                 ;	by Richard E. Haskell
+                 ;	Dept. of Computer Science and Engineering
+                 ;	Oakland University
+                 ;	Rochester, Michigan 48309
+                 ;
+                 ;	eForth 1.0 by Bill Muench and C. H. Ting, 1990
+                 ;	Much of the code is derived from the following sources:
+                 ;	8086 figForth by Thomas Newman, 1981 and Joe smith, 1983
+                 ;	aFORTH by John Rible
+                 ;	bFORTH by Bill Muench
+                 ;
+                 ;	The goal of this implementation is to provide a simple eForth Model
+                 ;	which can be ported easily to many 8, 16, 24 and 32 bit CPU's.
+                 ;	The following attributes make it suitable for CPU's of the '90:
+                 ;
+                 ;	small machine dependent kernel and portable high level code
+                 ;	subroutine threaded code
+                 ;	single code dictionaries
+                 ;	each word record has a link field, a name field and a code field
+                 ;	simple terminal and file interface to host computer
+                 ;	aligned with the proposed ANS Forth Standard
+                 ;	easy upgrade path to optimize for specific CPU
+                 ;	easy mixing of Forth and assembly language
+                 ;	all assembly language tools can be used directly
+                 ;
+                 ;	You are invited to implement this Model on your favorite CPU and
+                 ;	contribute it to the eForth Library for public use. You may use
+                 ;	a portable implementation to advertise more sophisticated and
+                 ;	optimized version for commercial purposes. However, you are
+                 ;	expected to implement the Model faithfully. The eForth Working
+                 ;	Group reserves the right to reject implementation which deviates
+                 ;	significantly from this Model.
+                 ;
+                 ;	Representing the eForth Working Group in the Silicon Valley FIG Chapter.
+                 ;	Send contributions to:
+                 ;
+                 ;	Dr. Chen-Hanson Ting
+                 ;	156 14th Avenue
+                 ;	San Mateo, CA 94402
+                 ;	(650) 571-7639
+                 ;	ting@offete.com
+                 ;
+                 ;   Ver 0.7 保留Arduino Bootloader (Byeaddress:7800 ~7FA0 , WordAddress: $3C00 ~ $3FD0
+                 ;   原有 328eForth : $3800 ~ $3fc3 。要把$3f8a ~$3fc3 移至$3FD0 , 要去掉Name Field, Link Field($C words) , 爽哥，諶老師，阿貴，毛翔 2012-10-30
+                 ;===============================================================
+                 
+                 ;; Version control
+                 
+                 .EQU	VER	=	2	;major release version
+                 .EQU	EXT	=	2	;minor extension
+                 
+                 ;; Constants
+                 
+                 .EQU	COMPO	=	$040	;lexicon compile only bit
+                 .EQU	IMEDD	=	$080	;lexicon immediate bit
+                 
+                 .EQU	BASEE	=	16		;default radix
+                 
+                 .EQU	BKSPP	=	8		;back space
+                 .EQU	LF		=	10		;line feed
+                 .EQU	CRR		=	13		;carriage return
+                 
+                 .EQU	RETT	=	$9508
+                 .EQU	CALLL	=	$940E
+                 
+                 ;; Memory allocation for ATmega328P, all byte addresses
+                 ;
+                 ;	Flash memory
+                 ;	$0		Reset and interrupt vectors, RWW section
+                 ;	$100	Initial values for variables
+                 ;	$200	Start of compiler and user words
+                 ;	$7000	Start of interpreter words, NRWW section
+                 ;	$7FFF	End of flash memory
+                 ;
+                 ;	RAM memory
+                 ;	$0		CPU and I/O registers
+                 ;	$100	Variables
+                 ;	$120	Free RAM memory
+                 ;	$160	Initial PAD
+                 ;	$4F0	Top of data stack
+                 ;	$700	Terminal input buffer
+                 ;	$7F0	Top of return stack
+                 ;	$800	Flash buffer 0
+                 ;	$880	Flash buffer 1
+                 ;	$8FF	End of RAM memory
+                 
+                 .EQU	RPP		=	$7F0	;start of return stack (RP0)
+                 .EQU	TIBB	=	$700	;terminal input buffer (TIB)
+                 .EQU	UPP		=	$100	;start of user area (UP0)
+                 .EQU	SPP		=	$6F0	;start of data stack (SP0)
+                 
+                 ;;	Flash programmming
+                 
+                 .EQU	BUF0	=	$800
+                 .EQU	BUF1	=	$880
+                 .EQU	NEWER	=	$11C	;flash pointer
+                 .EQU	OLDER	=	$11E	;flash pointer
+                 ; buffer pointer word format:	dirty,page_addr,cell_addr,buf?
+                 
+                 ;; Initialize assembly variable
+                 
+                 .SET _LINK		=	0		;init a null link
+                 
+                 ;	Compile a code definition header.
+                 
+                 .MACRO	CODE				;;LEX,NAME 
+                 	.DW		_LINK*2			;;link pointer
+                 	.SET _LINK	=	pc		;;link points to a name string
+                 	.DB		@0,@1
+                 	.ENDM
+                 
+                 ;	Colon header is identical to code header.
+                 
+                 .MACRO	COLON				;;LEX,NAME,LABEL
+                 	.DW		_LINK*2			;;link pointer
+                 	.SET _LINK	=	pc		;;link points to a name string
+                 	.DB		@0,@1
+                 	.ENDM
+                 
+                 ;; Macros defined by amForth
+                 
+                 .DEF zerol = r2
+                 .DEF zeroh = r3
+                 .DEF temp4 = r14
+                 .DEF temp5 = r15
+                 .DEF temp0 = r16
+                 .DEF temp1 = r17
+                 .DEF temp2 = r18
+                 .DEF temp3 = r19
+                 .DEF temp6 = r20
+                 .DEF temp7 = r21
+                 .DEF tosl = r24
+                 .DEF tosh = r25
+                 
+                 .macro loadtos
+                 	ld tosl, Y+
+                 	ld tosh, Y+
+                 .endmacro
+                 
+                 .macro savetos
+                 	st -Y, tosh
+                 	st -Y, tosl
+                 .endmacro
+                 
+                 .macro in_
+                 .if (@1 < $40)
+                   	in @0,@1
+                 .else
+                   	lds @0,@1
+                 .endif
+                 .endmacro
+                 
+                 .macro out_
+                 .if (@0 < $40)
+                   	out @0,@1
+                 .else
+                   	sts @0,@1
+                 .endif
+                 .endmacro
+                 
+                 .macro readflashcell
+                 	lsl zl
+                 	rol zh
+                 	lpm @0, Z+
+                 	lpm @1, Z+
+                 .endmacro
+                 
+                 .macro writeflashcell
+                 	lsl zl
+                 	rol zh
+                 .endmacro
+                 
+                 ;; Main entry points and COLD start data
+                 
+                 ; 首先在一般的中斷向量位址上，寫入RCALL指令(1 word長)。因為空間上只允許放入這麼短的指令。(每項只能放 2 words)
+                 ; 其次在後面丁陳老師留的$00~$7F(word address, = byte address $00~$FF) 共128 words = 256 bytes 範圍內放中斷程式導引機制。
+                 
+                 ; ???
+                 ; CALL 先指向 QUIT，日後再把寫好的中斷服務字用高階字 ISR_ASSIGN 塞入，取代QUIT即可。
+                 ;  CALL 的OP CODE為1 word長，不必換。只要換它的operand(也是1 word長)即位址就好。
+                 
+                 ;; Main entry points and COLD start data
+                 
+                 	.CSEG
+                 	
+                 	.ORG $3FD0  ; BootLoader $3C00 ~ $3FD0 後面 
+                 ERASE:
+003fd0 01fc      	movw	zl,tosl
+003fd1 9189
+003fd2 9199      	loadtos
+                 ERASE_1:
+003fd3 e043      	ldi 	spmcrval, (1<<PGERS) | (1<<SELFPRGEN)
+003fd4 d016      	rcall 	Do_spm
+                 ; re-enable the RWW section
+003fd5 e141      	ldi 	spmcrval, (1<<RWWSRE) | (1<<SELFPRGEN)
+003fd6 c014      	rjmp 	Do_spm
+                 
+                 ; Page Write
+                 WRITE:
+003fd7 01fc      	movw	zl, tosl
+003fd8 9189
+003fd9 9199      	loadtos
+003fda 01dc      	movw	xl, tosl
+003fdb 9189
+003fdc 9199      	loadtos
+                 WRITE_1:
+003fdd e860      	ldi 	looplo, low(PAGESIZEB) ;init loop variable
+                 Wrloop:
+003fde 900d      	ld 		r0, X+
+003fdf 901d      	ld 		r1, X+
+003fe0 e041      	ldi 	spmcrval, (1<<SELFPRGEN)
+003fe1 d009      	rcall 	Do_spm
+003fe2 9632      	adiw 	ZL, 2
+003fe3 5062      	subi 	looplo, 2 ;use subi for PAGESIZEB<=256
+003fe4 f7c9      	brne 	Wrloop
+                 ; execute Page Write
+003fe5 58e0      	subi 	ZL, low(PAGESIZEB) ;restore pointer
+003fe6 40f0      	sbci 	ZH, high(PAGESIZEB) ;not required for PAGESIZEB<=256
+003fe7 e045      	ldi 	spmcrval, (1<<PGWRT) | (1<<SELFPRGEN)
+003fe8 d002      	rcall 	Do_spm
+                 ; re-enable the RWW section
+003fe9 e141      	ldi 	spmcrval, (1<<RWWSRE) | (1<<SELFPRGEN)
+003fea c000      	rjmp 	Do_spm
+                 
+                 Do_spm:
+                 ; check for previous SPM complete
+                 Wait_spm:
+003feb b717      	in 		temp1, SPMCSR
+003fec fd10      	sbrc 	temp1, SELFPRGEN
+003fed cffd      	rjmp 	Wait_spm
+                 ; SPM timed sequence
+003fee bf47      	out 	SPMCSR, spmcrval
+003fef 95e8      	spm
+003ff0 9508      	ret
+                 	
+                 	.ORG	0
+                 
+                 ;  建 INTERUPT VECTOR CALL表 ( 共 26 interrupt, 佔2*26 words =52 words = 104 bytes ) ( 52 =ox34 words )
+                 
+000000 940c 0100 	JMP		ORIG		;1, RESET
+                 
+                 
+000002 d031      	RCALL		ISR_HEAD	;2, INT0
+000003 d044      		RCALL		ISR0
+000004 d02f      	RCALL		ISR_HEAD	;3, INT1
+000005 d042      		RCALL		ISR0
+000006 d02d      	RCALL		ISR_HEAD	;4
+000007 d040      		RCALL		ISR0
+000008 d02b      	RCALL		ISR_HEAD	;5
+000009 d03e      		RCALL		ISR0
+00000a d029      	RCALL		ISR_HEAD	;6
+00000b d03c      		RCALL		ISR0
+00000c d027      	RCALL		ISR_HEAD	;7
+00000d d03a      		RCALL		ISR0
+00000e d025      	RCALL		ISR_HEAD	;8
+00000f d038      		RCALL		ISR0
+000010 d023      	RCALL		ISR_HEAD	;9
+000011 d036      		RCALL		ISR0
+000012 d021      	RCALL		ISR_HEAD	;10
+000013 d034      		RCALL		ISR0
+000014 d01f      	RCALL		ISR_HEAD    ;11
+000015 d032      		RCALL		ISR0
+000016 d01d      	RCALL		ISR_HEAD	;12
+000017 d030      		RCALL		ISR0
+000018 d01b      	RCALL		ISR_HEAD	;13
+000019 d02e      		RCALL		ISR0
+00001a d019      	RCALL		ISR_HEAD	;14
+00001b d02c      		RCALL		ISR0
+00001c d017      	RCALL		ISR_HEAD	;15
+00001d d02a      		RCALL		ISR0
+00001e d015      	RCALL		ISR_HEAD	;16
+00001f d028      		RCALL		ISR0
+000020 d013      	RCALL		ISR_HEAD	;17
+000021 d026      		RCALL		ISR0
+000022 d011      	RCALL		ISR_HEAD	;18
+000023 d024      		RCALL		ISR0
+000024 d00f      	RCALL		ISR_HEAD	;19, RX
+000025 d022      		RCALL		ISR0
+000026 d00d      	RCALL		ISR_HEAD	;20
+000027 d020      		RCALL		ISR0
+000028 d00b      	RCALL		ISR_HEAD	;21
+000029 d01e      		RCALL		ISR0
+00002a d009      	RCALL		ISR_HEAD	;22
+00002b d01c      		RCALL		ISR0
+00002c d007      	RCALL		ISR_HEAD	;23
+00002d d01a      		RCALL		ISR0
+00002e d005      	RCALL		ISR_HEAD	;24
+00002f d018      		RCALL		ISR0
+000030 d003      	RCALL		ISR_HEAD	;25
+000031 d016      		RCALL		ISR0
+000032 d001      	RCALL		ISR_HEAD	;26
+000033 d014      		RCALL		ISR0
+                 
+                 
+                 ; 	.ORG	$35  ;   << 請跟在  INTERUPT VECTOR CALL  後 >>
+                 ;      
+                 ISR_HEAD:
+                      
+                 	; save r4 to data stack
+000034 924a      	  st -Y, r4
+                 	; save SREG to data stack
+000035 b64f      	  IN r4, SREG
+000036 924a      	  st -Y, r4
+                 	; save z to data stack
+000037 93ea      	  st -Y, zl
+000038 93fa      	  st -Y, zh
+                 	; pop return stack to z
+000039 91ff      	  pop zh
+00003a 91ef      	  pop zl
+                 	; change word add. to byte add. ( *2)
+00003b 0fee      	  lsl zl
+00003c 1fff      	  rol zh
+                 	; get data on add. (through r4) and push to return stack
+00003d 9045      	  lpm r4, Z+
+00003e 924f      	  push r4
+00003f 9045      	  lpm r4, Z+
+000040 924f      	  push r4
+                 	 ; CALL ISR0
+                 	; recover z, r4, SREG
+000041 91f9      	  ld zh, Y+
+000042 91e9      	  ld zl, Y+
+000043 9049      	  ld r4, Y+
+000044 be4f      	  OUT SREG, r4
+000045 9049      	  ld r4, Y+
+                 	
+                 	; return from interrupt
+000046 940c 006e 	  JMP DBG ; 結束中斷急務，返回forth處理中斷程式。
+                 
+                 
+                 ; = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 
+                 
+                 	; .ORG	$3fe0
+                 
+                 ;  ISR0
+                 	; ISR0 ( -- )
+                 	; 
+                 ;	COLON 4,"ISR0"
+                 ISR0:
+000048 940e 05b1 	CALL HEX
+00004a 940e 029f 	CALL RFROM
+00004c 940e 029f 	CALL RFROM
+00004e 940e 03b4 	CALL DDUP
+000050 940e 02b9 	CALL TOR
+000052 940e 02b9 	CALL TOR
+000054 940e 06a6 	CALL DOT
+000056 940e 06a6 	CALL DOT
+000058 940e 0660 	CALL CR
+00005a 940e 08ff 	CALL DOTS 
+00005c 940e 0660 	CALL CR 
+                 
+00005e 940e 04cb 	 CALL DEPTH 
+000060 940e 06a6 	 CALL DOT 
+000062 940e 0683 	 CALL	DOTQP 	;initialize I/O
+000064 200a
+000065 4e49
+000066 5320
+000067 4154
+000068 4b43
+C:\ksanapc\ide328_2\328eForth.asm(402): warning: .cseg .db misalignment - padding zero byte
+000069 0021      	.DB		10," IN STACK!"	;model
+00006a 9518      	 RETI
+                 
+00006b 0000
+00006c 4403
+00006d 4742      	 COLON 3,"DBG"
+                 	 DBG:
+00006e 940e 02ab 	 CALL RAT 
+000070 9518      	 RETI
+                 	
+                 
+                 
+                 
+                 	;JMP 
+                  
+                 	
+                 ;	COLON 4,"ISR0"
+                 ;	ISR0:
+                 ;	CALL HEX
+                 ;	CALL RAT
+                 ;	CALL DOT
+                 	
+                 ;	RCALL	CR
+                 ;	RCALL	DOTQP 	;initialize I/O
+                 ;	.DB		8,"INTERUPT"	;model
+                 
+                 ;	JMP QUIT 
+                 ; 建  INTERUPT VECTOR CALL 表 ，塞入QUIT 
+                 ;                                                              或印出RETURN STACK 值以標示VECTOR
+                 
+                 
+                 
+                 	.ORG	$80		;byte address $100, copy to ram on boot, 
+                 					;saved from ram for turnkey system
+                 	
+                 UZERO:	
+000080 127e      	.DW		HI*2	;'BOOT
+000081 0000      	.DW		0		;reserved
+000082 0010      	.DW		BASEE	;BASE
+000083 0000      	.DW		0		;tmp
+000084 0000      	.DW		0		;SPAN
+000085 0000      	.DW		0		;>IN
+000086 0000      	.DW		0		;#TIB
+000087 0700      	.DW		TIBB	;TIB
+000088 10aa      	.DW		INTER*2	;'EVAL
+000089 0000      	.DW		0		;HLD
+00008a 1850      	.DW		LASTN	;CONTEXT pointer
+00008b 189c      	.DW		CTOP	;CP
+00008c 0140      	.DW		DTOP	;DP
+00008d 1850      	.DW		LASTN	;LAST
+00008e 6f00      	.DW		$6F00	;PTR0 to BUF0
+00008f 6f81      	.DW		$6F81	;PTR1 to BUF1
+                 ULAST:
+                 
+                 ;;	.ORG	$3800	;byte address $7000
+                 	.ORG	$100	;byte address $7000
+                 ORIG:	
+000100 b6a4      	in_ 	r10, MCUSR
+000101 24bb      	clr 	r11
+000102 2422      	clr 	zerol
+000103 2433      	clr 	zeroh
+000104 be24      	out_ 	MCUSR, zerol
+                 	; init return stack pointer
+000105 efa0      	ldi 	xl,low(RPP)
+000106 bfad      	out_ 	SPL,xl
+000107 e0b7      	ldi 	xh,high(RPP)
+000108 bfbe      	out_ 	SPH,xh
+                 	; init parameter stack pointer
+000109 efc0      	ldi 	yl,low(SPP)
+00010a e0d6      	ldi 	yh,high(SPP)
+                 	; jump to Forth starting word
+00010b 940c 094f 	jmp 	COLD
+                 
+                 
+                 
+                 ;   ?RX	( -- c T | F )
+                 ;	Return input character and true, or a false if no input.
+                 
+00010d 00d8
+00010e 3f04
+00010f 454b
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(478): macro 'CODE' called here
+000110 0059      	CODE	4,"?KEY"
+                 QRX:
+                 QKEY:
+000111 939a
+000112 938a      	savetos
+000113 2788      	clr 	tosl
+000114 2799      	clr 	tosh
+000115 01c1      	movw	tosl,zerol
+000116 91a0 00c0 	in_		xl,UCSR0A
+000118 ffa7      	sbrs	xl,7
+000119 9508      	ret
+00011a 9180 00c6 	in_		tosl,UDR0
+00011c 939a
+00011d 938a      	savetos
+00011e ef8f      	ser		tosl
+00011f ef9f      	ser		tosh
+000120 9508      	ret
+                 
+                 ;   TX!	( c -- )
+                 ;	Send character c to the output device.
+                 
+000121 021c
+000122 4504
+000123 494d
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(497): macro 'CODE' called here
+000124 0054      	CODE	4,"EMIT"
+                 EMIT:
+                 TXSTO:	
+000125 91a0 00c0 	in_		xl,UCSR0A
+000127 ffa5      	sbrs	xl,5
+000128 cffc      	rJMP	TXSTO
+000129 9380 00c6 	out_	UDR0,tosl
+00012b 9189
+00012c 9199      	loadtos
+00012d 9508      	ret
+                 
+                 ;   !IO	( -- )
+                 ;	Initialize the serial I/O devices.
+                 
+00012e 0244
+00012f 2103
+000130 4f49      	CODE	3,"!IO"
+                 STOIO:
+000131 e3a3      	ldi		xl,$33	;19200 baud
+                 ;	ldi		xl,$66	;9600 baud
+000132 93a0 00c4 	out_	UBRR0L,xl
+000134 27aa      	clr		xl
+000135 93a0 00c5 	out_	UBRR0H,xl
+000137 e1a8      	ldi		xl,$18	;enable TX and RX
+000138 93a0 00c1 	out_	UCSR0B,xl
+00013a e0a6      	ldi		xl,6	;8 data bits
+00013b 93a0 00c2 	out_	UCSR0C,xl
+00013d 9508      	RET
+                 
+                 ;; The kernel
+                 
+                 ;   doLIT	( -- w )
+                 ;	Push an inline literal.
+                 
+00013e 025e
+00013f 6445
+000140 4c6f
+000141 5449      	CODE	COMPO+5,"doLIT"
+                 DOLIT:
+000142 939a
+000143 938a      	savetos
+000144 91ff      	pop		zh
+000145 91ef      	pop		zl
+000146 0fee
+000147 1fff
+000148 9185
+000149 9195      	readflashcell tosl,tosh
+00014a 95f7      	ror		zh
+00014b 95e7      	ror		zl
+00014c 93ef      	push	zl
+00014d 93ff      	push	zh
+00014e 9508      	ret
+                 
+                 ;   next	( -- )
+                 ;	Run time code for the single index loop.
+                 
+00014f 027e
+000150 6e44
+000151 7865
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(543): macro 'CODE' called here
+000152 0074      	CODE	COMPO+4,"next"
+                 DONXT:
+000153 91ff      	POP		zh	;ret addr
+000154 91ef      	POP		zl	;
+000155 91bf      	pop		xh	;count
+000156 91af      	pop		xl
+000157 9711      	sbiw	xl, 1
+000158 f424      	brge	NEXT1
+000159 9631      	adiw	zl,1
+00015a 93ef      	push	zl
+00015b 93ff      	push	zh
+00015c 9508      	ret
+                 NEXT1:	
+00015d 93af      	push	xl	;push count back
+00015e 93bf      	push	xh	
+00015f 0fee
+000160 1fff
+000161 91a5
+000162 91b5      	readflashcell	xl,xh
+000163 93af      	push	xl
+000164 93bf      	push	xh
+000165 9508      	ret
+                 
+                 ;   ?branch	( f -- )
+                 ;	Branch if flag is zero.
+                 
+000166 02a0
+000167 3f47
+000168 7262
+000169 6e61
+00016a 6863      	CODE	COMPO+7,"?branch"
+                 QBRAN:
+00016b 91ff      	pop		zh
+00016c 91ef      	pop		zl
+00016d 2b89      	or		tosl, tosh
+00016e 9189
+00016f 9199      	loadtos
+000170 f059      	breq	BRAN1
+000171 9631      	adiw	zl,1
+000172 93ef      	push	zl
+000173 93ff      	push	zh
+000174 9508      	ret
+                 
+                 ;   branch	( -- )
+                 ;	Branch to an inline address.
+                 
+000175 02ce
+000176 6246
+000177 6172
+000178 636e
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(581): macro 'CODE' called here
+000179 0068      	CODE	COMPO+6,"branch"
+                 BRAN:	
+00017a 91ff      	pop		zh
+00017b 91ef      	pop		zl
+                 BRAN1:	
+00017c 0fee
+00017d 1fff
+00017e 91a5
+00017f 91b5      	readflashcell xl,xh
+000180 93af      	push	xl
+000181 93bf      	push	xh
+000182 9508      	ret
+                 
+                 ;   EXECUTE	( b -- )
+                 ;	Execute the word at ca=b/2.
+                 
+000183 02ec
+000184 4507
+000185 4558
+000186 5543
+000187 4554      	CODE	7,"EXECUTE"
+                 EXECU:
+000188 9595      	asr		tosh	;b/2
+000189 9587      	ror		tosl
+00018a 938f      	push	tosl
+00018b 939f      	push	tosh
+00018c 9189
+00018d 9199      	loadtos
+00018e 9508      	ret
+                 
+                 ;   EXIT	( -- )
+                 ;	Terminate current colon word.
+                 
+00018f 0308
+000190 4504
+000191 4958
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(606): macro 'CODE' called here
+000192 0054      	CODE	4,"EXIT"
+                 EXIT:
+000193 91bf      	pop		xh
+000194 91af      	pop		xl
+000195 9508      	ret
+                 
+                 ;   !	( w a -- )
+                 ;	Pop the data stack to memory.
+                 
+000196 0320
+000197 2101      	CODE	1,"!"
+                 STORE:
+000198 01fc      	movw 	zl, tosl
+000199 9189
+00019a 9199      	loadtos
+00019b 8391      	std 	Z+1, tosh
+00019c 8380      	std 	Z+0, tosl
+00019d 9189
+00019e 9199      	loadtos
+00019f 9508      	RET
+                 
+                 ;   @	( a -- w )
+                 ;	Push memory location to the data stack.
+                 
+0001a0 032e
+0001a1 4001      	CODE	1,"@"
+                 AT:
+0001a2 01fc      	movw 	zl, tosl
+0001a3 9181      	ld 		tosl, z+
+0001a4 9191      	ld 		tosh, z+
+0001a5 9508      	RET
+                 
+                 ;   I@	( a -- w )
+                 ;	Push flash memory cell to the data stack.
+                 
+0001a6 0342
+0001a7 4902
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(637): macro 'CODE' called here
+0001a8 0040      	CODE	2,"I@"
+                 IAT:
+0001a9 df98      	RCALL	DOLIT
+0001aa 011c      	.DW		NEWER
+0001ab d03e      	RCALL	BUFQ	;n a new?
+0001ac dfbe      	RCALL	QBRAN	;if a=new, fetch n in new_buf
+0001ad 01b7      	.DW		IAT1	;else, a=old?
+0001ae df93      	RCALL	DOLIT	;n a a old
+0001af 011e      	.DW		OLDER
+0001b0 d039      	RCALL	BUFQ	;n a old?
+0001b1 dfb9      	RCALL	QBRAN	;if a=old, fetch n in old_buf
+0001b2 01ba      	.DW		IAT2	
+0001b3 01fc      	movw 	zl, tosl	;else, fetch from flash
+0001b4 9185      	lpm		tosl, z+
+0001b5 9195      	lpm		tosh, z+
+0001b6 9508      	RET
+                 IAT1:
+0001b7 df8a      	RCALL	DOLIT
+0001b8 011c      	.DW		NEWER
+0001b9 c002      	RJMP	IAT3
+                 IAT2:
+0001ba df87      	RCALL	DOLIT
+0001bb 011e      	.DW		OLDER
+                 IAT3:
+0001bc d038      	RCALL	BUFAT
+0001bd cfe4      	RJMP	AT
+                 
+                 ;   IC@	( a -- w )
+                 ;	Push flash memory byte to the data stack.
+                 
+0001be 034e
+0001bf 4903
+0001c0 4043      	CODE	3,"IC@"
+                 ICAT:
+0001c1 df80      	RCALL	DOLIT
+0001c2 011c      	.DW		NEWER
+0001c3 d026      	RCALL	BUFQ	;n a new?
+0001c4 dfa6      	RCALL	QBRAN	;if a=new, fetch n in new_buf
+0001c5 01cf      	.DW		ICAT1	;else, a=old?
+0001c6 df7b      	RCALL	DOLIT	;n a a old
+0001c7 011e      	.DW		OLDER
+0001c8 d021      	RCALL	BUFQ	;n a old?
+0001c9 dfa1      	RCALL	QBRAN	;if a=old, fetch n in old_buf
+0001ca 01d2      	.DW		ICAT2	
+0001cb 01fc      	movw 	zl, tosl	;else, fetch from flash
+0001cc 2799      	clr 	tosh
+0001cd 9184      	lpm 	tosl, Z
+0001ce 9508      	RET
+                 ICAT1:
+0001cf df72      	RCALL	DOLIT
+0001d0 011c      	.DW		NEWER
+0001d1 c002      	RJMP	ICAT3
+                 ICAT2:
+0001d2 df6f      	RCALL	DOLIT
+0001d3 011e      	.DW		OLDER
+                 ICAT3:
+0001d4 d020      	RCALL	BUFAT
+0001d5 c0c2      	RJMP	CAT
+                 
+0001d6 037e
+0001d7 4206
+0001d8 4655
+0001d9 4546
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(694): macro 'CODE' called here
+0001da 0052      	CODE	6,"BUFFER"	; ptr -- buf
+                 BUFFER:
+0001db df66      	RCALL	DOLIT
+0001dc 0001      	.DW		$1
+0001dd d11d      	RCALL	ANDD
+0001de df8c      	RCALL	QBRAN
+0001df 01e3      	.DW		BUF_1
+0001e0 df61      	RCALL	DOLIT
+0001e1 0880      	.DW		BUF1
+0001e2 9508      	RET	
+                 BUF_1:
+0001e3 df5e      	RCALL	DOLIT
+0001e4 0800      	.DW		BUF0
+0001e5 9508      	RET
+                 
+0001e6 03ae
+0001e7 4204
+0001e8 4655
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(709): macro 'CODE' called here
+0001e9 003f      	CODE	4,"BUF?"	; a new/old -- f
+                 BUFQ:
+0001ea dfb7      	RCALL	AT
+0001eb d0ff      	RCALL	OVER
+0001ec d11e      	RCALL	XORR
+0001ed df54      	RCALL	DOLIT
+0001ee 7f80      	.DW		$7F80
+0001ef d10b      	RCALL	ANDD
+0001f0 9508      	RET
+                 
+0001f1 03ce
+0001f2 4204
+0001f3 4655
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(719): macro 'CODE' called here
+0001f4 0040      	CODE	4,"BUF@"	; a new/old -- buuf_addr
+                 BUFAT:
+0001f5 dfac      	RCALL	AT
+0001f6 dfe4      	RCALL	BUFFER
+0001f7 d0e9      	RCALL	SWAPP
+0001f8 df49      	RCALL	DOLIT
+0001f9 007f      	.DW		$7F
+0001fa d100      	RCALL	ANDD
+0001fb c10f      	RJMP	XORR
+                 
+                 ;   I!	( w a -- )
+                 ;	Store w to flash memory byte location.
+                 
+0001fc 03e4
+0001fd 4902
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(732): macro 'CODE' called here
+0001fe 0021      	CODE	2,"I!"
+                 ISTOR:				;a=new?
+0001ff df42      	RCALL	DOLIT
+000200 011c      	.DW		NEWER
+000201 dfe8      	RCALL	BUFQ	;n a a new_ptr
+000202 df68      	RCALL	QBRAN	;if a=new, store n in new_buf
+000203 0215      	.DW		ISTOR5	;else, a=old?
+                 ;
+000204 df3d      	RCALL	DOLIT	;n a a old
+000205 011e      	.DW		OLDER
+000206 dfe3      	RCALL	BUFQ	;n a a old_ptr
+000207 df63      	RCALL	QBRAN	;if a=old, switch ptrs, store n in new_buf
+000208 0214      	.DW		ISTOR4	;else, flush old_buf
+                 
+000209 df38      	RCALL	DOLIT	;n a old
+00020a 011e      	.DW		OLDER
+00020b df96      	RCALL	AT	;n a old_ptr 
+00020c df35      	RCALL	DOLIT	;n a dirty?
+00020d 8000      	.DW		$8000
+00020e d0ec      	RCALL	ANDD
+00020f df5b      	RCALL	QBRAN	;if not dirty, go read flash data into old_buf
+000210 0212      	.DW		ISTOR2	;else, flush old_buf to flash
+                 
+000211 d008      ISTOR1:	RCALL	FLUSH_OLD
+000212 d01a      ISTOR2:	RCALL	READ_FLASH
+000213 d028      ISTOR3:	RCALL	UPDATE_OLD
+000214 d03b      ISTOR4:	RCALL	SWITCH
+000215 c04a      ISTOR5:	RJMP 	UPDATE_NEW
+                 
+000216 03fa
+000217 4605
+000218 554c
+000219 4853      	CODE	5,"FLUSH"	; --
+                 FLUSH_OLD:
+00021a df27      	RCALL	DOLIT	;old
+00021b 011e      	.DW		OLDER
+00021c df85      	RCALL	AT	;old_ptr
+00021d d0bc      	RCALL	DUPP	;old_ptr old_ptr
+00021e df23      	RCALL	DOLIT
+00021f 7f80      	.DW		$7F80
+000220 d0da      	RCALL	ANDD	;old_ptr flash_addr 
+000221 d0b8      	RCALL	DUPP	;old_ptr flash_addr flash_addr
+000222 940e 3fd0 	CALL	ERASE	;old_ptr flash_addr
+                 ;
+000224 d0bc      	RCALL	SWAPP	;flash_addr old_ptr 
+000225 dfb5      	RCALL	BUFFER	;flash_addr buf
+000226 d0ba      	RCALL	SWAPP	;buf flash_addr
+000227 940c 3fd7 	JMP	WRITE	
+                 
+000229 042e
+00022a 4004
+00022b 4c4f
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(778): macro 'CODE' called here
+00022c 0044      	CODE	4,"@OLD"	;a -- a
+                 READ_FLASH:	;read new flash data into old_buf
+00022d df14      	RCALL	DOLIT	;a old
+00022e 011e      	.DW		OLDER
+00022f df72      	RCALL	AT		;a old_ptr
+000230 dfaa      	RCALL	BUFFER	;a buf
+000231 d0b9      	RCALL	OVER	;a buf a
+000232 df0f      	RCALL	DOLIT
+000233 7f80      	.DW		$7F80
+000234 d0c6      	RCALL	ANDD	;a buf flash_addr
+000235 d0ab      	RCALL	SWAPP	;a flash_addr buf
+000236 940c 0979 	JMP	READ	;a
+                 
+000238 0454
+000239 2104
+00023a 4c4f
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(791): macro 'CODE' called here
+00023b 0044      	CODE	4,"!OLD"	;a --
+                 UPDATE_OLD:			;preserve buf? bit
+00023c d09d      	RCALL	DUPP	;a a
+00023d df04      	RCALL	DOLIT	;
+00023e 7f80      	.DW		$7F80
+00023f d0bb      	RCALL	ANDD	;a page_addr
+000240 df01      	RCALL	DOLIT
+000241 011e      	.DW		OLDER	;a page_addr old
+000242 d09e      	RCALL	SWAPP	;a old page_addr
+000243 d0a7      	RCALL	OVER	;a old page_addr old
+000244 df5d      	RCALL	AT	;a old page_addr old_ptr
+000245 defc      	RCALL	DOLIT
+000246 0001      	.DW		$1
+000247 d0b3      	RCALL	ANDD	;a old page_addr buf?
+000248 d0ba      	RCALL	ORR	;a old updates_old_ptr
+000249 d097      	RCALL	SWAPP	;a old_ptr old
+00024a cf4d      	RJMP	STORE	;a
+                 
+00024b 0472
+00024c 5306
+00024d 4957
+00024e 4354
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(809): macro 'CODE' called here
+00024f 0048      	CODE	6,"SWITCH"	; --
+                 SWITCH:	
+000250 def1      	RCALL	DOLIT	;old
+000251 011e      	.DW		OLDER
+000252 df4f      	RCALL	AT		;old_ptr
+000253 deee      	RCALL	DOLIT	;old_ptr new
+000254 011c      	.DW		NEWER
+000255 df4c      	RCALL	AT		;old_ptr new_ptr
+000256 deeb      	RCALL	DOLIT	;old_ptr new_ptr old
+000257 011e      	.DW		OLDER
+000258 df3f      	RCALL	STORE	;old_ptr
+000259 dee8      	RCALL	DOLIT	;old_ptr new
+00025a 011c      	.DW		NEWER
+00025b cf3c      	RJMP	STORE	; 
+                 	
+00025c 0498
+00025d 2104
+00025e 454e
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(824): macro 'CODE' called here
+00025f 0057      	CODE	4,"!NEW"	;n a --
+                 UPDATE_NEW:			;write data to new buufer, set dirty bit
+000260 dee1      	RCALL	DOLIT	;n a 7e
+000261 007e      	.DW		$7E
+000262 d098      	RCALL	ANDD	;n disp
+000263 dede      	RCALL	DOLIT	;n disp new
+000264 011c      	.DW		NEWER
+000265 df3c      	RCALL	AT		;n disp new_ptr
+000266 df74      	RCALL	BUFFER	;n disp buf
+                 UPDAT1:
+000267 d09b      	RCALL	ORR		;n buff_addr
+000268 df2f      	RCALL	STORE	;update word in new_buf
+                 
+000269 ded8      	RCALL	DOLIT	;set dirty bit in newer
+00026a 011c      	.DW		NEWER
+00026b d06e      	RCALL	DUPP	;newer newer
+00026c df35      	RCALL	AT		;newer new_ptr
+00026d ded4      	RCALL	DOLIT
+00026e 8000      	.DW		$8000
+00026f d093      	RCALL	ORR		;newer new_ptr_dirty
+000270 d070      	RCALL	SWAPP
+000271 cf26      	RJMP	STORE	;new buf is dirty now
+                 
+                 ;	EMPTY-BUFFERS ( -- )
+000272 04ba
+000273 4605
+000274 554c
+000275 4853      	CODE	5,"FLUSH"
+                 
+                 EMPTY_BUF:
+000276 d003      	RCALL	EMPTY_OLD
+000277 dfd8      	RCALL	SWITCH
+000278 d001      	RCALL	EMPTY_OLD
+000279 cfd6      	RJMP	SWITCH
+                 
+                 ;	EMPTY_OLD	;flush old buffer if it is dirty
+                 
+                 EMPTY_OLD:
+00027a dec7      	RCALL	DOLIT	;old
+00027b 011e      	.DW		OLDER
+00027c df25      	RCALL	AT		;old_ptr 
+00027d d05c      	RCALL	DUPP	;old_ptr old_ptr
+00027e dec3      	RCALL	DOLIT	;
+00027f 8000      	.DW		$8000
+000280 d07a      	RCALL	ANDD	;old_ptr dirty?
+000281 dee9      	RCALL	QBRAN	;if not dirty, exit
+000282 028a      	.DW		EMPTY_1	;else, flush old_buf
+                 ;
+000283 debe      	RCALL	DOLIT	;old_ptr
+000284 7fff      	.DW		$7FFF
+000285 d075      	RCALL	ANDD	;old_ptr, dirty bit cleared
+000286 debb      	RCALL	DOLIT
+000287 011e      	.DW		OLDER
+000288 df0f      	RCALL	STORE	;old_ptr flash_addr
+000289 cf90      	RJMP	FLUSH_OLD
+                 EMPTY_1:
+00028a c049      	RJMP	DROP
+                 
+                 ;   C!	( c b -- )
+                 ;	Pop the data stack to byte memory.
+                 
+00028b 04e6
+00028c 4302
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(882): macro 'CODE' called here
+00028d 0021      	CODE	2,"C!"
+                 CSTOR:
+00028e 01fc      	movw 	zl, tosl
+00028f 9189
+000290 9199      	loadtos
+000291 8380      	st 		Z, tosl
+000292 9189
+000293 9199      	loadtos
+000294 9508      	RET
+                 
+                 ;   C@	( b -- c )
+                 ;	Push byte memory location to the data stack.
+                 
+000295 0518
+000296 4302
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(893): macro 'CODE' called here
+000297 0040      	CODE	2,"C@"
+                 CAT:
+000298 01fc      	movw 	zl, tosl
+000299 2799      	clr 	tosh
+00029a 8180      	ld 		tosl, Z
+00029b 9508      	RET
+                 
+                 ;   R>	( -- w )
+                 ;	Pop the return stack to the data stack.
+                 
+00029c 052c
+00029d 5242
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(903): macro 'CODE' called here
+00029e 003e      	CODE	COMPO+2,"R>"
+                 RFROM:
+00029f 939a
+0002a0 938a      	savetos
+0002a1 91bf      	pop		xh
+0002a2 91af      	pop		xl
+0002a3 919f      	pop 	tosh
+0002a4 918f      	pop 	tosl
+0002a5 93af      	push 	xl
+0002a6 93bf      	push 	xh
+0002a7 9508      	RET
+                 
+                 ;   R@	( -- w )
+                 ;	Copy top of return stack to the data stack.
+                 
+0002a8 053a
+0002a9 5202
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(917): macro 'CODE' called here
+0002aa 0040      	CODE	2,"R@"
+                 RAT:
+0002ab 939a
+0002ac 938a      	savetos
+0002ad 91bf      	pop		xh
+0002ae 91af      	pop		xl
+0002af 919f      	pop 	tosh
+0002b0 918f      	pop 	tosl
+0002b1 938f      	push 	tosl
+0002b2 939f      	push 	tosh
+0002b3 93af      	push 	xl
+0002b4 93bf      	push 	xh
+0002b5 9508      	RET
+                 
+                 ;   >R	( w -- )
+                 ;	Push the data stack to the return stack.
+                 
+0002b6 0552
+0002b7 3e42
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(933): macro 'CODE' called here
+0002b8 0052      	CODE	COMPO+2,">R"
+                 TOR:
+0002b9 91bf      	pop		xh
+0002ba 91af      	pop		xl
+0002bb 938f      	push 	tosl
+0002bc 939f      	push 	tosh
+0002bd 93af      	push 	xl
+0002be 93bf      	push 	xh
+0002bf 9189
+0002c0 9199      	loadtos
+0002c1 9508      	RET
+                 
+                 ;   SP@	( -- a )
+                 ;	Push the current data stack pointer.
+                 
+0002c2 056e
+0002c3 5303
+0002c4 4050      	CODE	3,"SP@"
+                 SPAT:
+0002c5 939a
+0002c6 938a      	savetos
+0002c7 01ce      	movw	tosl, yl
+0002c8 9508      	RET
+                 
+                 ;   SP!	( a -- )
+                 ;	Set the data stack pointer.
+                 
+0002c9 0586
+0002ca 5303
+0002cb 2150      	CODE	3,"SP!"
+                 SPSTO:
+0002cc 01ec      	movw 	yl, tosl
+0002cd 9189
+0002ce 9199      	loadtos
+0002cf 9508      	RET
+                 
+                 ;   DROP	( w -- )
+                 ;	Discard top stack item.
+                 
+0002d0 0594
+0002d1 4404
+0002d2 4f52
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(965): macro 'CODE' called here
+0002d3 0050      	CODE	4,"DROP"
+                 DROP:
+0002d4 9189
+0002d5 9199      	loadtos
+0002d6 9508      	RET
+                 
+                 ;   DUP	( w -- w w )
+                 ;	Duplicate the top stack item.
+                 
+0002d7 05a2
+0002d8 4403
+0002d9 5055      	CODE	3,"DUP"
+                 DUPP:
+0002da 939a
+0002db 938a      	savetos
+0002dc 9508      	RET
+                 
+                 ;   SWAP	( w1 w2 -- w2 w1 )
+                 ;	Exchange top two stack items.
+                 
+0002dd 05b0
+0002de 5304
+0002df 4157
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(981): macro 'CODE' called here
+0002e0 0050      	CODE	4,"SWAP"
+                 SWAPP:
+0002e1 01dc      	movw 	xl, tosl
+0002e2 9189      	ld		tosl,Y+
+0002e3 9199      	ld		tosh,Y+
+0002e4 93ba      	st 		-Y, xh
+0002e5 93aa      	st 		-Y, xl
+0002e6 9508      	RET
+                 
+                 ;   OVER	( w1 w2 -- w1 w2 w1 )
+                 ;	Copy second stack item to top.
+                 
+0002e7 05bc
+0002e8 4f04
+0002e9 4556
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(993): macro 'CODE' called here
+0002ea 0052      	CODE	4,"OVER"
+                 OVER:
+0002eb 939a
+0002ec 938a      	savetos
+0002ed 818a      	ldd 	tosl, Y+2
+0002ee 819b      	ldd 	tosh, Y+3
+0002ef 9508      	RET
+                 
+                 ;   0<	( n -- t )
+                 ;	Return true if n is negative.
+                 
+0002f0 05d0
+0002f1 3002
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1003): macro 'CODE' called here
+0002f2 003c      	CODE	2,"0<"
+                 ZLESS:
+0002f3 2399      	tst 	tosh
+0002f4 01c1      	movw 	tosl, zerol
+0002f5 f40c      	brge 	ZLESS1
+0002f6 9701      	sbiw 	tosl,1
+                 ZLESS1:
+0002f7 9508      	RET
+                 
+                 ;   AND	( w w -- w )
+                 ;	Bitwise AND.
+                 
+0002f8 05e2
+0002f9 4103
+0002fa 444e      	CODE	3,"AND"
+                 ANDD:
+0002fb 91a9      	ld 		xl, Y+
+0002fc 91b9      	ld 		xh, Y+
+0002fd 238a      	and 	tosl, xl
+0002fe 239b      	and 	tosh, xh
+0002ff 9508      	RET
+                 
+                 ;   OR	( w w -- w )
+                 ;	Bitwise inclusive OR.
+                 
+000300 05f2
+000301 4f02
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1026): macro 'CODE' called here
+000302 0052      	CODE	2,"OR"
+                 ORR:
+000303 91a9      	ld 		xl, Y+
+000304 91b9      	ld 		xh, Y+
+000305 2b8a      	or 		tosl, xl
+000306 2b9b      	or 		tosh, xh
+000307 9508      	RET
+                 
+                 ;   XOR	( w w -- w )
+                 ;	Bitwise exclusive OR.
+                 
+000308 0602
+000309 5803
+00030a 524f      	CODE	3,"XOR"
+                 XORR:
+00030b 91a9      	ld 		xl, Y+
+00030c 91b9      	ld 		xh, Y+
+00030d 278a         	eor 	tosl, xl
+00030e 279b      	eor 	tosh, xh
+00030f 9508      	RET
+                 
+                 ;   UM+	( u u -- udsum )
+                 ;	Add two unsigned single numbers and return a double sum.
+                 
+000310 0612
+000311 5503
+000312 2b4d      	CODE	3,"UM+"
+                 UPLUS:
+000313 91a9      	ld 		xl, Y+
+000314 91b9      	ld 		xh, Y+
+000315 0f8a      	add 	tosl, xl
+000316 1f9b      	adc 	tosh, xh
+000317 939a
+000318 938a      	savetos
+000319 2799      	clr		tosh
+00031a 2788      	clr		tosl
+00031b 1f88      	rol		tosl
+00031c 9508      	RET
+                 
+                 ;; System and user variables
+                 
+                 ;   doVAR	( -- a )
+                 ;	Run time routine for VARIABLE and CREATE.
+                 
+00031d 0622
+00031e 6445
+00031f 566f
+000320 5241      	CODE	COMPO+5,"doVAR"
+                 DOVAR:
+000321 939a
+000322 938a      	savetos
+000323 91ff      	pop 	zh
+000324 91ef      	pop 	zl
+000325 0fee
+000326 1fff
+000327 9185
+000328 9195      	readflashcell tosl,tosh
+000329 9508      	RET
+                 
+                 ;   'BOOT	( -- a )
+                 ;	Storage of application address.
+                 
+00032a 063c
+00032b 2705
+00032c 4f42
+00032d 544f      	COLON	5,"'BOOT"
+                 TBOOT:
+00032e dff2      	RCALL	DOVAR
+00032f 0100      	.DW		UPP
+                 
+                 ;   BASE	( -- a )
+                 ;	Storage of the radix base for numeric I/O.
+                 
+000330 0656
+000331 4204
+000332 5341
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1084): macro 'COLON' called here
+000333 0045      	COLON	4,"BASE"
+                 BASE:
+000334 dfec      	RCALL	DOVAR
+000335 0104      	.DW		UPP+4
+                 
+                 ;   tmp	( -- a )
+                 ;	A temporary storage location used in parse and find.
+                 
+000336 0662
+000337 5403
+000338 504d      	COLON	3,"TMP"
+                 TEMP:
+000339 dfe7      	RCALL	DOVAR
+00033a 0106      	.DW		UPP+6
+                 
+                 ;   SPAN	( -- a )
+                 ;	Hold character count received by EXPECT.
+                 
+00033b 066e
+00033c 5304
+00033d 4150
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1100): macro 'COLON' called here
+00033e 004e      	COLON	4,"SPAN"
+                 SPAN:
+00033f dfe1      	RCALL	DOVAR
+000340 0108      	.DW		UPP+8
+                 
+                 ;   >IN	( -- a )
+                 ;	Hold the character pointer while parsing input stream.
+                 
+000341 0678
+000342 3e03
+000343 4e49      	COLON	3,">IN"
+                 INN:
+000344 dfdc      	RCALL	DOVAR
+000345 010a      	.DW		UPP+10
+                 
+                 ;   #TIB	( -- a )
+                 ;	Hold the current count in and address of the terminal input buffer.
+                 
+000346 0684
+000347 2304
+000348 4954
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1116): macro 'COLON' called here
+000349 0042      	COLON	4,"#TIB"
+                 NTIB:
+00034a dfd6      	RCALL	DOVAR
+00034b 010c      	.DW		UPP+12
+                 
+                 ;   'TIB	( -- a )
+                 ;	Hold the current count in and address of the terminal input buffer.
+                 
+00034c 068e
+00034d 2704
+00034e 4954
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1124): macro 'COLON' called here
+00034f 0042      	COLON	4,"'TIB"
+                 TTIB:
+000350 dfd0      	RCALL	DOVAR
+000351 010e      	.DW		UPP+14
+                 
+                 ;   'EVAL	( -- a )
+                 ;	Execution vector of EVAL.
+                 
+000352 069a
+000353 2705
+000354 5645
+000355 4c41      	COLON	5,"'EVAL"
+                 TEVAL:
+000356 dfca      	RCALL	DOVAR
+000357 0110      	.DW		UPP+16
+                 
+                 ;   HLD	( -- a )
+                 ;	Hold a pointer in building a numeric output string.
+                 
+000358 06a6
+000359 4803
+00035a 444c      	COLON	3,"HLD"
+                 HLD:
+00035b dfc5      	RCALL	DOVAR
+00035c 0112      	.DW		UPP+18
+                 
+                 ;   CONTEXT	( -- a )
+                 ;	A area to specify vocabulary search order.
+                 
+00035d 06b2
+00035e 4307
+00035f 4e4f
+000360 4554
+000361 5458      	COLON	7,"CONTEXT"
+                 CNTXT:
+000362 dfbe      	RCALL	DOVAR
+000363 0114      	.DW		UPP+20
+                 
+                 ;   CP	( -- a )
+                 ;	Point to the top of the code dictionary.
+                 
+000364 06bc
+000365 4302
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1156): macro 'COLON' called here
+000366 0050      	COLON	2,"CP"
+                 CPP:
+000367 dfb9      	RCALL	DOVAR
+000368 0116      	.DW		UPP+22
+                 
+                 ;   DP	( -- a )
+                 ;	Point to the free RAM space.
+                 
+000369 06ca
+00036a 4402
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1164): macro 'COLON' called here
+00036b 0050      	COLON	2,"DP"
+                 DPP:
+00036c dfb4      	RCALL	DOVAR
+00036d 0118      	.DW		UPP+24
+                 
+                 ;   LAST	( -- a )
+                 ;	Point to the last name in the name dictionary.
+                 
+00036e 06d4
+00036f 4c04
+000370 5341
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1172): macro 'COLON' called here
+000371 0054      	COLON	4,"LAST"
+                 LAST:
+000372 dfae      	RCALL	DOVAR
+000373 011a      	.DW		UPP+26
+                 
+                 ;; Common functions
+                 
+                 ;   2*	( n -- n )
+                 ;	Multiply tos by cell size in bytes.
+                 
+000374 06de
+000375 3202
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1182): macro 'COLON' called here
+000376 002a      	COLON	2,"2*"
+                 CELLS:
+000377 0f88      	lsl		tosl
+000378 1f99      	rol		tosh
+000379 9508      	ret
+                 
+                 ;   2/	( n -- n )
+                 ;	Divide tos by cell size in bytes.
+                 
+00037a 06ea
+00037b 3202
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1191): macro 'COLON' called here
+00037c 002f      	COLON	2,"2/"
+                 TWOSL:
+00037d 9595      	asr		tosh
+00037e 9587      	ror		tosl
+00037f 9508      	ret
+                 
+                 ;   ALIGNED	( b -- a )
+                 ;	Align address to the cell boundary.
+                 
+000380 06f6
+000381 4107
+000382 494c
+000383 4e47
+000384 4445      	CODE	7,"ALIGNED"
+                 ALGND:
+000385 9601      	adiw	tosl,1
+000386 7f8e      	andi	tosl,254
+000387 9508      	ret
+                 
+                 ;   BL	( -- 32 )
+                 ;	Return 32, the blank character.
+                 
+000388 0702
+000389 4202
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1209): macro 'COLON' called here
+00038a 004c      	COLON	2,"BL"
+                 BLANK:
+00038b 939a
+00038c 938a      	savetos
+00038d e280      	ldi		tosl,32
+00038e 2799      	clr		tosh
+00038f 9508      	ret
+                 
+                 ;   ?DUP	( w -- w w | 0 )
+                 ;	Dup tos if its is not zero.
+                 
+000390 0712
+000391 3f04
+000392 5544
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1219): macro 'COLON' called here
+000393 0050      	COLON	4,"?DUP"
+                 QDUP:
+000394 2f08          mov 	temp0, tosl
+000395 2b09          or 		temp0, tosh
+000396 f011          breq 	QDUP1
+000397 939a
+000398 938a          savetos
+                 QDUP1:
+000399 9508      	RET
+                 
+                 ;   ROT	( w1 w2 w3 -- w2 w3 w1 )
+                 ;	Rot 3rd item to top.
+                 
+00039a 0722
+00039b 5203
+00039c 544f      	COLON	3,"ROT"
+                 ROT:
+00039d 018c          movw 	temp0, tosl
+00039e 9129          ld 		temp2, Y+
+00039f 9139          ld 		temp3, Y+ 
+0003a0 9189
+0003a1 9199          loadtos
+0003a2 933a          st 		-Y, temp3
+0003a3 932a          st 		-Y, temp2
+0003a4 931a          st 		-Y, temp1
+0003a5 930a          st 		-Y, temp0
+0003a6 9508      	RET
+                 
+                 ;   2DROP	( w w -- )
+                 ;	Discard two items on stack.
+                 
+0003a7 0736
+0003a8 3205
+0003a9 5244
+0003aa 504f      	COLON	5,"2DROP"
+                 DDROP:
+0003ab 9189
+0003ac 9199      	loadtos
+0003ad 9189
+0003ae 9199      	loadtos
+0003af 9508      	ret
+                 
+                 ;   2DUP	( w1 w2 -- w1 w2 w1 w2 )
+                 ;	Duplicate top two items.
+                 
+0003b0 0750
+0003b1 3204
+0003b2 5544
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1255): macro 'COLON' called here
+0003b3 0050      	COLON	4,"2DUP"
+                 DDUP:
+0003b4 df36      	RCALL	OVER
+0003b5 cf35      	RJMP	OVER
+                 
+                 ;   +	( w w -- sum )
+                 ;	Add top two items.
+                 
+0003b6 0762
+0003b7 2b01      	COLON	1,"+"
+                 PLUS:
+0003b8 9109          ld 		temp0, Y+
+0003b9 9119          ld 		temp1, Y+
+0003ba 0f80          add 	tosl, temp0
+0003bb 1f91          adc 	tosh, temp1
+0003bc 9508      	RET
+                 
+                 ;   NOT	( w -- w )
+                 ;	One's complement of tos.
+                 
+0003bd 076e
+0003be 4906
+0003bf 564e
+0003c0 5245
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1274): macro 'COLON' called here
+0003c1 0054      	COLON	6,"INVERT"
+                 INVER:
+0003c2 9580          com 	tosl
+0003c3 9590          com 	tosh
+0003c4 9508      	ret
+                 
+                 ;   NEGATE	( n -- -n )
+                 ;	Two's complement of tos.
+                 
+0003c5 077c
+0003c6 4e06
+0003c7 4745
+0003c8 5441
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1283): macro 'COLON' called here
+0003c9 0045      	COLON	6,"NEGATE"
+                 NEGAT:
+0003ca dff7      	RCALL	INVER
+0003cb 9601      	adiw	tosl,1
+0003cc 9508      	ret
+                 
+                 ;   DNEGATE	( d -- -d )
+                 ;	Two's complement of top double.
+                 
+0003cd 078c
+0003ce 4407
+0003cf 454e
+0003d0 4147
+0003d1 4554      	COLON	7,"DNEGATE"
+                 DNEGA:
+0003d2 dfef      	RCALL	INVER
+0003d3 dee5      	RCALL	TOR
+0003d4 dfed      	RCALL	INVER
+0003d5 dd6c      	RCALL	DOLIT
+0003d6 0001      	.DW	1
+0003d7 df3b      	RCALL	UPLUS
+0003d8 dec6      	RCALL	RFROM
+0003d9 cfde      	RJMP	PLUS
+                 
+                 ;   -	( n1 n2 -- n1-n2 )
+                 ;	Subtraction.
+                 
+0003da 079c
+0003db 2d01      	COLON	1,"-"
+                 SUBB:
+0003dc 9109          ld 		temp0, Y+
+0003dd 9119          ld 		temp1, Y+
+0003de 1b08          sub 	temp0, tosl
+0003df 0b19          sbc 	temp1, tosh
+0003e0 01c8          movw 	tosl, temp0
+0003e1 9508      	ret
+                 
+                 ;   ABS		( n -- n )
+                 ;	Return the absolute value of n.
+                 
+0003e2 07b6
+0003e3 4103
+0003e4 5342      	COLON	3,"ABS"
+                 ABSS:
+0003e5 def4      	RCALL	DUPP
+0003e6 df0c      	RCALL	ZLESS
+0003e7 dd83      	RCALL	QBRAN
+0003e8 03ea      	.DW	ABS1
+0003e9 cfe0      	RJMP	NEGAT
+                 ABS1:	
+0003ea 9508      	RET
+                 
+                 ;   =	( w w -- t )
+                 ;	Return true if top two are equal.
+                 
+0003eb 07c6
+0003ec 3d01      	COLON	1,"="
+                 EQUAL:
+0003ed df1d      	RCALL	XORR
+0003ee dd7c      	RCALL	QBRAN
+0003ef 03f3      	.DW		EQU1
+0003f0 dd51      	RCALL	DOLIT
+0003f1 0000      	.DW		0
+0003f2 9508      	RET
+                 EQU1:
+0003f3 dd4e      	RCALL	DOLIT
+0003f4 ffff      	.DW		-1
+0003f5 9508      	RET
+                 
+                 ;   U<	( u u -- t )
+                 ;	Unsigned compare of top two items.
+                 
+0003f6 07d8
+0003f7 5502
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1347): macro 'COLON' called here
+0003f8 003c      	COLON	2,"U<"
+                 ULESS:
+0003f9 dfba      	RCALL	DDUP
+0003fa df10      	RCALL	XORR
+0003fb def7      	RCALL	ZLESS
+0003fc dd6e      	RCALL	QBRAN
+0003fd 0401      	.DW		ULES1
+0003fe dee2      	RCALL	SWAPP
+0003ff ded4      	RCALL	DROP
+000400 cef2      	RJMP	ZLESS
+                 ULES1:
+000401 dfda      	RCALL	SUBB
+000402 cef0      	RJMP	ZLESS
+                 
+                 ;   <	( n1 n2 -- t )
+                 ;	Signed compare of top two items.
+                 
+000403 07ee
+000404 3c01      	COLON	1,"<"
+                 LESS:
+000405 dfae      	RCALL	DDUP
+000406 df04      	RCALL	XORR
+000407 deeb      	RCALL	ZLESS
+000408 dd62      	RCALL	QBRAN
+000409 040c      	.DW		LESS1
+00040a dec9      	RCALL	DROP
+00040b cee7      	RJMP	ZLESS
+                 LESS1:
+00040c dfcf      	RCALL	SUBB
+00040d cee5      	RJMP	ZLESS
+                 
+                 ;   MAX	( n n -- n )
+                 ;	Return the greater of two top stack items.
+                 
+00040e 0808
+00040f 4d03
+000410 5841      	COLON	3,"MAX"
+                 MAX:
+000411 dfa2      	RCALL	DDUP
+000412 dff2      	RCALL	LESS
+000413 dd57      	RCALL	QBRAN
+000414 0416      	.DW		MAX1
+000415 decb      	RCALL	SWAPP
+                 MAX1:
+000416 cebd      	RJMP	DROP
+                 
+                 ;   MIN	( n n -- n )
+                 ;	Return the smaller of top two stack items.
+                 
+000417 081e
+000418 4d03
+000419 4e49      	COLON	3,"MIN"
+                 MIN:
+00041a df99      	RCALL	DDUP
+00041b dec5      	RCALL	SWAPP
+00041c dfe8      	RCALL	LESS
+00041d dd4d      	RCALL	QBRAN
+00041e 0420      	.DW		MIN1
+00041f dec1      	RCALL	SWAPP
+                 MIN1:
+000420 ceb3      	RJMP	DROP
+                 
+                 ;   WITHIN	( u ul uh -- t )
+                 ;	Return true if u is within the range of ul and uh. ( ul <= u < uh )
+                 
+000421 0830
+000422 5706
+000423 5449
+000424 4948
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1407): macro 'COLON' called here
+000425 004e      	COLON	6,"WITHIN"
+                 WITHI:
+000426 dec4      	RCALL	OVER
+000427 dfb4      	RCALL	SUBB
+000428 de90      	RCALL	TOR
+000429 dfb2      	RCALL	SUBB
+00042a de74      	RCALL	RFROM
+00042b cfcd      	RJMP	ULESS
+                 
+                 ;; Divide
+                 
+                 ;   UM/MOD	( udl udh un -- ur uq )
+                 ;	Unsigned divide of a double by a single. Return mod and quotient.
+                 
+00042c 0844
+00042d 5506
+00042e 2f4d
+00042f 4f4d
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1421): macro 'COLON' called here
+000430 0044      	COLON	6,"UM/MOD"
+                 UMMOD:
+000431 017c          movw 	temp4, tosl
+000432 9129          ld 		temp2, Y+
+000433 9139          ld 		temp3, Y+
+000434 9109          ld 		temp0, Y+
+000435 9119          ld 		temp1, Y+
+                 ;; unsigned 32/16 -> 16r16 divide
+                   ; set 	loop counter
+000436 e140          ldi 	temp6,$10
+                 UMMOD1:
+                     ; shift left, saving high bit
+000437 2755          clr 	temp7
+000438 0f00          lsl 	temp0
+000439 1f11          rol 	temp1
+00043a 1f22          rol 	temp2
+00043b 1f33          rol 	temp3
+00043c 1f55          rol 	temp7
+                   ; try subtracting divisor
+00043d 152e          cp 		temp2, temp4
+00043e 053f          cpc 	temp3, temp5
+00043f 0552          cpc 	temp7,zerol
+000440 f018          brcs 	UMMOD3
+                 UMMOD2:
+                     ; dividend is large enough
+                     ; do the subtraction for real
+                     ; and set lowest bit
+000441 9503          inc 	temp0
+000442 192e          sub 	temp2, temp4
+000443 093f          sbc 	temp3, temp5
+                 UMMOD3:
+000444 954a          dec  	temp6
+000445 f789          brne 	UMMOD1
+                 UMMOD4:
+                     ; put remainder on stack
+000446 933a          st 		-Y,temp3
+000447 932a          st 		-Y,temp2
+                     ; put quotient on stack
+000448 01c8          movw 	tosl, temp0
+000449 9508      	ret
+                 
+                 ;   M/MOD	( d n -- r q )
+                 ;	Signed floored divide of double by single. Return mod and quotient.
+                 
+00044a 085a
+00044b 4d05
+00044c 4d2f
+00044d 444f      	COLON	5,"M/MOD"
+                 MSMOD:
+00044e de8b      	RCALL	DUPP
+00044f dea3      	RCALL	ZLESS
+000450 de89      	RCALL	DUPP
+000451 de67      	RCALL	TOR
+000452 dd18      	RCALL	QBRAN
+000453 0458      	.DW	MMOD1
+000454 df75      	RCALL	NEGAT
+000455 de63      	RCALL	TOR
+000456 df7b      	RCALL	DNEGA
+000457 de47      	RCALL	RFROM
+                 MMOD1:	
+000458 de60      	RCALL	TOR
+000459 de80      	RCALL	DUPP
+00045a de98      	RCALL	ZLESS
+00045b dd0f      	RCALL	QBRAN
+00045c 045f      	.DW	MMOD2
+00045d de4d      	RCALL	RAT
+00045e df59      	RCALL	PLUS
+                 MMOD2:	
+00045f de3f      	RCALL	RFROM
+000460 dfd0      	RCALL	UMMOD
+000461 de3d      	RCALL	RFROM
+000462 dd08      	RCALL	QBRAN
+000463 0467      	.DW	MMOD3
+000464 de7c      	RCALL	SWAPP
+000465 df64      	RCALL	NEGAT
+000466 de7a      	RCALL	SWAPP
+                 MMOD3:	
+000467 9508      	RET
+                 
+                 ;   /MOD	( n n -- r q )
+                 ;	Signed divide. Return mod and quotient.
+                 
+000468 0896
+000469 2f04
+00046a 4f4d
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1500): macro 'COLON' called here
+00046b 0044      	COLON	4,"/MOD"
+                 SLMOD:
+00046c de7e      	RCALL	OVER
+00046d de85      	RCALL	ZLESS
+00046e de72      	RCALL	SWAPP
+00046f cfde      	RJMP	MSMOD
+                 
+                 ;   MOD	( n n -- r )
+                 ;	Signed divide. Return mod only.
+                 
+000470 08d2
+000471 4d03
+000472 444f      	COLON	3,"MOD"
+                 MODD:
+000473 dff8      	RCALL	SLMOD
+000474 ce5f      	RJMP	DROP
+                 
+                 
+                 ;   /	( n n -- q )
+                 ;	Signed divide. Return quotient only.
+                 
+000475 08e2
+000476 2f01      	COLON	1,"/"
+                 SLASH:
+000477 dff4      	RCALL	SLMOD
+000478 de68      	RCALL	SWAPP
+000479 ce5a      	RJMP	DROP
+                 
+                 ;; Multiply
+                 
+                 ;   UM*	( u u -- ud )
+                 ;	Unsigned multiply. Return double product.
+                 
+00047a 08ec
+00047b 5503
+00047c 2a4d      	COLON	3,"UM*"
+                 UMSTA:
+00047d 018c          movw 	temp0, tosl
+00047e 9189
+00047f 9199          loadtos
+                     ; low bytes
+000480 9f80          mul 	tosl,temp0
+000481 01f0          movw 	zl, r0
+000482 2722          clr 	temp2
+000483 2733          clr 	temp3
+                     ; middle bytes
+000484 9f90          mul 	tosh, temp0
+000485 0df0          add 	zh, r0
+000486 1d21          adc 	temp2, r1
+000487 1d33          adc 	temp3, zeroh
+000488 9f81      	mul 	tosl, temp1
+000489 0df0      	add 	zh, r0
+00048a 1d21      	adc 	temp2, r1
+00048b 1d33      	adc 	temp3, zeroh
+00048c 9f91      	mul 	tosh, temp1
+00048d 0d20      	add 	temp2, r0
+00048e 1d31      	adc 	temp3, r1
+00048f 01cf      	movw 	tosl, zl
+000490 939a
+000491 938a      	savetos
+000492 01c9      	movw 	tosl, temp2
+000493 9508      	ret
+                 
+                 ;   *	( n n -- n )
+                 ;	Signed multiply. Return single product.
+                 
+000494 08f6
+000495 2a01      	COLON	1,"*"
+                 STAR:
+000496 d004      	RCALL	MSTAR
+000497 ce3c      	RJMP	DROP
+                 
+                 ;   M*		( n n -- d )
+                 ;	Signed multiply. Return double product.
+                 
+000498 092a
+000499 4d02
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1567): macro 'COLON' called here
+00049a 002a      	COLON	2,"M*"
+                 MSTAR:
+00049b df18      	RCALL	DDUP
+00049c de6e      	RCALL	XORR
+00049d de55      	RCALL	ZLESS
+00049e de1a      	RCALL	TOR
+00049f df45      	RCALL	ABSS
+0004a0 de40      	RCALL	SWAPP
+0004a1 df43      	RCALL	ABSS
+0004a2 dfda      	RCALL	UMSTA
+0004a3 ddfb      	RCALL	RFROM
+0004a4 dcc6      	RCALL	QBRAN
+0004a5 04a7      	.DW	MSTA1
+0004a6 df2b      	RCALL	DNEGA
+                 MSTA1:	
+0004a7 9508      	RET
+                 
+                 ;   */MOD	( n1 n2 n3 -- r q )
+                 ;	Multiply n1 and n2, then divide by n3. Return mod and quotient.
+                 
+0004a8 0932
+0004a9 2a05
+0004aa 4d2f
+0004ab 444f      	COLON	5,"*/MOD"
+                 SSMOD:
+0004ac de0c      	RCALL	TOR
+0004ad dfed      	RCALL	MSTAR
+0004ae ddf0      	RCALL	RFROM
+0004af cf9e      	RJMP	MSMOD
+                 
+                 ;   */	( n1 n2 n3 -- q )
+                 ;	Multiply n1 by n2, then divide by n3. Return quotient only.
+                 
+0004b0 0952
+0004b1 2a02
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1597): macro 'COLON' called here
+0004b2 002f      	COLON	2,"*/"
+                 STASL:
+0004b3 dff8      	RCALL	SSMOD
+0004b4 de2c      	RCALL	SWAPP
+0004b5 ce1e      	RJMP	DROP
+                 
+                 ;; Miscellaneous
+                 
+                 ;   >CHAR	( c -- c )
+                 ;	Filter non-printing characters.
+                 
+0004b6 0962
+0004b7 3e05
+0004b8 4843
+0004b9 5241      	CODE	5,">CHAR"
+                 TCHAR:
+0004ba 9508          RET           ;  No filter ;albert  2012/5/2
+0004bb de1e      	RCALL	DUPP
+0004bc dece      	RCALL	BLANK
+0004bd dc84      	RCALL	DOLIT
+0004be 007f      	.DW		$7F
+0004bf df66      	RCALL	WITHI
+0004c0 dcaa      	RCALL	QBRAN
+0004c1 04c3      	.DW		TCHAR1
+0004c2 9508      	RET
+                 TCHAR1:	
+0004c3 de10      	RCALL	DROP
+0004c4 dc7d      	RCALL	DOLIT
+0004c5 005f      	.DW		'_'
+0004c6 9508      	RET
+                 
+                 
+                 ;   DEPTH	( -- n )
+                 ;	Return the depth of the data stack.
+                 
+0004c7 096e
+0004c8 4405
+0004c9 5045
+0004ca 4854      	COLON	5,"DEPTH"
+                 DEPTH:
+0004cb ddf9      	RCALL	SPAT
+0004cc dc75      	RCALL	DOLIT
+0004cd 06ee      	.DW		SPP-2
+0004ce de12      	RCALL	SWAPP
+0004cf df0c      	RCALL	SUBB
+0004d0 ceac      	RJMP	TWOSL
+                 
+                 ;   PICK	( ... +n -- ... w )
+                 ;	Copy the nth stack item to tos.
+                 
+0004d1 0990
+0004d2 5004
+0004d3 4349
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1641): macro 'COLON' called here
+0004d4 004b      	COLON	4,"PICK"
+                 PICK:
+0004d5 9601      	ADIW	TOSL,1
+0004d6 dea0      	RCALL	CELLS
+0004d7 dded      	RCALL	SPAT
+0004d8 dedf      	RCALL	PLUS
+0004d9 ccc8      	RJMP	AT
+                 
+                 ;; Memory access
+                 
+                 ;   +!	( n a -- )
+                 ;	Add n to the contents at address a.
+                 
+0004da 09a4
+0004db 2b02
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1654): macro 'COLON' called here
+0004dc 0021      	COLON	2,"+!"
+                 PSTOR:
+0004dd de03      	RCALL	SWAPP
+0004de de0c      	RCALL	OVER
+0004df dcc2      	RCALL	AT
+0004e0 ded7      	RCALL	PLUS
+0004e1 ddff      	RCALL	SWAPP
+0004e2 ccb5      	RJMP	STORE
+                 
+                 ;   COUNT	( b -- b +n )
+                 ;	Return count byte of a string and add 1 to byte address.
+                 
+0004e3 09b6
+0004e4 4305
+0004e5 554f
+0004e6 544e      	COLON	5,"COUNT"
+                 COUNT:
+0004e7 01fc      	movw	zl, tosl
+0004e8 9101      	ld		temp0, z+
+0004e9 01cf      	movw	tosl, zl
+0004ea 939a
+0004eb 938a      	savetos
+0004ec 2f80      	mov		tosl, temp0
+0004ed 2799      	clr		tosh
+0004ee 9508      	ret
+                 
+                 ;   ICOUNT	( b -- b +n )
+                 ;	Return count byte of a string and add 1 to byte address.
+                 
+0004ef 09c8
+0004f0 4906
+0004f1 4f43
+0004f2 4e55
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1679): macro 'COLON' called here
+0004f3 0054      	COLON	6,"ICOUNT"
+                 ICOUNT:
+0004f4 dde5      	RCALL	DUPP
+0004f5 9601      	adiw	tosl,1
+0004f6 ddea      	RCALL	SWAPP
+0004f7 ccc9      	RJMP	ICAT
+                 
+                 ;   HERE	( -- a )
+                 ;	Return the top of the code dictionary.
+                 
+0004f8 09e0
+0004f9 4804
+0004fa 5245
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1689): macro 'COLON' called here
+0004fb 0045      	COLON	4,"HERE"
+                 HEREE:
+0004fc de6f      	RCALL	DPP
+0004fd cca4      	RJMP	AT
+                 
+                 ;   PAD	( -- a )
+                 ;	Return the address of the text buffer above the code dictionary.
+                 
+0004fe 09f2
+0004ff 5003
+000500 4441      	COLON	3,"PAD"
+                 PAD:
+000501 dffa      	RCALL	HEREE
+000502 dc3f      	RCALL	DOLIT
+000503 0040      	.DW		$40
+000504 ceb3      	RJMP	PLUS
+                 
+                 ;   TIB	( -- a )
+                 ;	Return the address of the terminal input buffer.
+                 
+000505 09fe
+000506 5403
+000507 4249      	COLON	3,"TIB"
+                 TIB:
+000508 de41      	RCALL	NTIB
+000509 9602      	ADIW	TOSL,2
+00050a cc97      	RJMP	AT
+                 
+                 ;   @EXECUTE	( a -- )
+                 ;	Execute vector stored in address a.
+                 
+00050b 0a0c
+00050c 4008
+00050d 5845
+00050e 4345
+00050f 5455
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1716): macro 'COLON' called here
+000510 0045      	COLON	8,"@EXECUTE"
+                 ATEXE:
+000511 dc90      	RCALL	AT
+000512 de81      	RCALL	QDUP	;?address or zero
+000513 dc57      	RCALL	QBRAN
+000514 0516      	.DW		EXE1
+000515 dc72      	RCALL	EXECU	;execute if non-zero
+                 EXE1:
+000516 9508      	RET				;do nothing if zero
+                 
+                 ;   CMOVE	( b1 b2 u -- )
+                 ;	Copy u bytes from b1 to b2.
+                 
+000517 0a18
+000518 4305
+000519 4f4d
+00051a 4556      	COLON	5,"CMOVE"
+                 CMOVE:
+00051b dd9d      	RCALL	TOR
+00051c c006      	RJMP	CMOV2
+                 CMOV1:
+00051d dd9b      	RCALL	TOR
+00051e dfc8      	RCALL	COUNT
+00051f dd8b      	RCALL	RAT
+000520 dd6d      	RCALL	CSTOR
+000521 dd7d      	RCALL	RFROM
+000522 9601      	ADIW	TOSL,1
+                 CMOV2:
+000523 dc2f      	RCALL	DONXT
+000524 051d      	.DW		CMOV1
+000525 ce85      	RJMP	DDROP
+                 
+                 ;	UPPER	( c -- c' )
+                 ;	Change character to upper case
+                 
+000526 0a30
+000527 5505
+000528 5050
+000529 5245      	CODE	5,"UPPER"
+                 UPPER:
+00052a 9508         RET      ; NO capitalize ; albert  2012/5/2 
+00052b ddae      	RCALL	DUPP
+00052c dc15      	RCALL	DOLIT
+00052d 0061      	.DW		$61
+00052e dc13      	RCALL	DOLIT
+00052f 007b      	.DW		$7B
+000530 def5      	RCALL	WITHI
+000531 dc39      	RCALL	QBRAN
+000532 0536      	.DW		UPPER1
+000533 dc0e      	RCALL	DOLIT
+000534 005f      	.DW		$5F
+000535 ddc5      	RCALL	ANDD
+                 UPPER1:
+000536 9508      	RET
+                 
+                 ;   UMOVE	( a b u -- )
+                 ;	Copy u bytes from b1 to b2, changing to upper case.
+                 
+000537 0a4e
+000538 5505
+000539 4f4d
+00053a 4556      	CODE	5,"UMOVE"
+                 UMOVE:
+00053b dd7d      	RCALL	TOR
+00053c c007      	RJMP	UMOV2
+                 UMOV1:
+00053d dd7b      	RCALL	TOR
+00053e dfa8      	RCALL	COUNT
+00053f dfea      	RCALL	UPPER
+000540 dd6a      	RCALL	RAT
+000541 dd4c      	RCALL	CSTOR
+000542 dd5c      	RCALL	RFROM
+000543 9601      	ADIW	TOSL,1
+                 UMOV2:
+000544 dc0e      	RCALL	DONXT
+000545 053d      	.DW		UMOV1
+000546 ce64      	RJMP	DDROP
+                 
+                 ;   FILL	( b u c -- )
+                 ;	Fill u bytes of character c to area beginning at b.
+                 
+000547 0a70
+000548 4604
+000549 4c49
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1788): macro 'COLON' called here
+00054a 004c      	COLON	4,"FILL"
+                 FILL:
+00054b dd95      	RCALL	SWAPP
+00054c dd6c      	RCALL	TOR
+00054d dd93      	RCALL	SWAPP
+00054e c003      	RJMP	FILL2
+                 FILL1:
+00054f de64      	RCALL	DDUP
+000550 dd3d      	RCALL	CSTOR
+000551 9601      	ADIW	TOSL,1
+                 FILL2:
+000552 dc00      	RCALL	DONXT
+000553 054f      	.DW		FILL1
+000554 ce56      	RJMP	DDROP
+                 
+                 ;; Numeric output, single precision
+                 
+                 ;   DIGIT	( u -- c )
+                 ;	Convert digit u to a character.
+                 
+000555 0a90
+000556 4405
+000557 4749
+000558 5449      	CODE	5,"DIGIT"
+                 DIGIT:
+000559 dbe8      	RCALL	DOLIT
+00055a 0009      	.DW		9
+00055b dd8f      	RCALL	OVER
+00055c dea8      	RCALL	LESS
+00055d dbe4      	RCALL	DOLIT
+00055e 0007      	.DW		7
+00055f dd9b      	RCALL	ANDD
+000560 de57      	RCALL	PLUS
+000561 dbe0      	RCALL	DOLIT
+000562 0030      	.DW		'0'
+000563 ce54      	RJMP	PLUS
+                 
+                 ;   EXTRACT	( n base -- n c )
+                 ;	Extract the least significant digit from n.
+                 
+000564 0aac
+000565 4507
+000566 5458
+000567 4152
+000568 5443      	CODE	7,"EXTRACT"
+                 EXTRC:
+000569 dbd8      	RCALL	DOLIT
+00056a 0000      	.DW		0
+00056b dd75      	RCALL	SWAPP
+00056c dec4      	RCALL	UMMOD
+00056d dd73      	RCALL	SWAPP
+00056e cfea      	RJMP	DIGIT
+                 
+                 ;   <#	( -- )
+                 ;	Initiate the numeric output process.
+                 
+00056f 0aca
+000570 3c02
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1837): macro 'COLON' called here
+000571 0023      	COLON	2,"<#"
+                 BDIGS:
+000572 df8e      	RCALL	PAD
+000573 dde7      	RCALL	HLD
+000574 cc23      	RJMP	STORE
+                 
+                 ;   HOLD	( c -- )
+                 ;	Insert a character into the numeric output string.
+                 
+000575 0ae0
+000576 4804
+000577 4c4f
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1846): macro 'COLON' called here
+000578 0044      	COLON	4,"HOLD"
+                 HOLD:
+000579 dde1      	RCALL	HLD
+00057a dc27      	RCALL	AT
+00057b 9701      	SBIW	TOSL,1
+00057c dd5d      	RCALL	DUPP
+00057d dddd      	RCALL	HLD
+00057e dc19      	RCALL	STORE
+00057f cd0e      	RJMP	CSTOR
+                 
+                 ;   #	( u -- u )
+                 ;	Extract one digit from u and append the digit to output string.
+                 
+000580 0aec
+000581 2301      	COLON	1,"#"
+                 DIG:
+000582 ddb1      	RCALL	BASE
+000583 dc1e      	RCALL	AT
+000584 dfe4      	RCALL	EXTRC
+000585 cff3      	RJMP	HOLD
+                 
+                 ;   #S	( u -- 0 )
+                 ;	Convert u until all digits are added to the output string.
+                 
+000586 0b02
+000587 2302
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1869): macro 'COLON' called here
+000588 0053      	COLON	2,"#S"
+                 DIGS:
+                 DIGS1:
+000589 dff8      	RCALL	DIG
+00058a dd4f      	RCALL	DUPP
+00058b dbdf      	RCALL	QBRAN
+00058c 058e      	.DW		DIGS2
+00058d cffb      	RJMP	DIGS1
+                 DIGS2:
+00058e 9508      	RET
+                 
+                 ;   SIGN	( n -- )
+                 ;	Add a minus sign to the numeric output string.
+                 
+00058f 0b0e
+000590 5304
+000591 4749
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1883): macro 'COLON' called here
+000592 004e      	COLON	4,"SIGN"
+                 SIGN:
+000593 dd5f      	RCALL	ZLESS
+000594 dbd6      	RCALL	QBRAN
+000595 0599      	.DW		SIGN1
+000596 dbab      	RCALL	DOLIT
+000597 002d      	.DW		'-'
+000598 dfe0      	RCALL	HOLD
+000599 9508      SIGN1:	RET
+                 
+                 ;   #>	( w -- b u )
+                 ;	Prepare the output string to be TYPE'd.
+                 
+00059a 0b20
+00059b 2302
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1896): macro 'COLON' called here
+00059c 003e      	COLON	2,"#>"
+                 EDIGS:
+00059d dd36      	RCALL	DROP
+00059e ddbc      	RCALL	HLD
+00059f dc02      	RCALL	AT
+0005a0 df60      	RCALL	PAD
+0005a1 dd49      	RCALL	OVER
+0005a2 ce39      	RJMP	SUBB
+                 
+                 ;   str		( w -- b u )
+                 ;	Convert a signed integer to a numeric string.
+                 
+0005a3 0b36
+0005a4 7303
+0005a5 7274      	CODE	3,"str"
+                 STR:
+0005a6 dd33      	RCALL	DUPP
+0005a7 dd11      	RCALL	TOR
+0005a8 de3c      	RCALL	ABSS
+0005a9 dfc8      	RCALL	BDIGS
+0005aa dfde      	RCALL	DIGS
+0005ab dcf3      	RCALL	RFROM
+0005ac dfe6      	RCALL	SIGN
+0005ad cfef      	RJMP	EDIGS
+                 
+                 ;   HEX		( -- )
+                 ;	Use radix 16 as base for numeric conversions.
+                 
+0005ae 0b48
+0005af 4803
+0005b0 5845      	COLON	3,"HEX"
+                 HEX:
+0005b1 db90      	RCALL	DOLIT
+0005b2 0010      	.DW	16
+0005b3 dd80      	RCALL	BASE
+0005b4 cbe3      	RJMP	STORE
+                 
+                 ;   DECIMAL	( -- )
+                 ;	Use radix 10 as base for numeric conversions.
+                 
+0005b5 0b5e
+0005b6 4407
+0005b7 4345
+0005b8 4d49
+0005b9 4c41      	COLON	7,"DECIMAL"
+                 DECIM:
+0005ba db87      	RCALL	DOLIT
+0005bb 000a      	.DW	10
+0005bc dd77      	RCALL	BASE
+0005bd cbda      	RJMP	STORE
+                 
+                 ;; Numeric input, single precision
+                 
+                 ;   DIGIT?	( c base -- u t )
+                 ;	Convert a character to its numeric value. A flag indicates success.
+                 
+0005be 0b6c
+0005bf 4406
+0005c0 4749
+0005c1 5449
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(1944): macro 'CODE' called here
+0005c2 003f      	CODE	6,"DIGIT?"
+                 DIGTQ:
+0005c3 dcf5      	RCALL	TOR
+0005c4 db7d      	RCALL	DOLIT
+0005c5 0030      	.DW		'0'
+0005c6 de15      	RCALL	SUBB
+0005c7 db7a      	RCALL	DOLIT
+0005c8 0009      	.DW		9
+0005c9 dd21      	RCALL	OVER
+0005ca de3a      	RCALL	LESS
+0005cb db9f      	RCALL	QBRAN
+0005cc 05d5      	.DW		DGTQ1
+0005cd db74      	RCALL	DOLIT
+0005ce 0007      	.DW		7
+0005cf de0c      	RCALL	SUBB
+0005d0 dd09      	RCALL	DUPP
+0005d1 db70      	RCALL	DOLIT
+0005d2 000a      	.DW		10
+0005d3 de31      	RCALL	LESS
+0005d4 dd2e      	RCALL	ORR
+                 DGTQ1:
+0005d5 dd04      	RCALL	DUPP
+0005d6 dcc8      	RCALL	RFROM
+0005d7 ce21      	RJMP	ULESS
+                 
+                 ;   NUMBER?	( a -- n T | a F )
+                 ;	Convert a number string to integer. Push a flag on tos.
+                 
+0005d8 0b7e
+0005d9 4e07
+0005da 4d55
+0005db 4542
+0005dc 3f52      	COLON	7,"NUMBER?"
+                 NUMBQ:
+0005dd dd56      	RCALL	BASE
+0005de dbc3      	RCALL	AT
+0005df dcd9      	RCALL	TOR
+0005e0 db61      	RCALL	DOLIT
+0005e1 0000      	.DW		0
+0005e2 dd08      	RCALL	OVER
+0005e3 df03      	RCALL	COUNT
+0005e4 dd06      	RCALL	OVER
+0005e5 dcb2      	RCALL	CAT
+0005e6 db5b      	RCALL	DOLIT
+0005e7 0024      	.DW		'$'
+0005e8 de04      	RCALL	EQUAL
+0005e9 db81      	RCALL	QBRAN
+0005ea 05f0      	.DW		NUMQ1
+0005eb dfc5      	RCALL	HEX
+0005ec dcf4      	RCALL	SWAPP
+0005ed 9601      	adiw	tosl,1
+0005ee dcf2      	RCALL	SWAPP
+0005ef 9701      	sbiw	tosl,1
+                 NUMQ1:
+0005f0 dcfa      	RCALL	OVER
+0005f1 dca6      	RCALL	CAT
+0005f2 db4f      	RCALL	DOLIT
+0005f3 002d      	.DW		'-'
+0005f4 ddf8      	RCALL	EQUAL
+0005f5 dcc3      	RCALL	TOR
+0005f6 dcea      	RCALL	SWAPP
+0005f7 dcb3      	RCALL	RAT
+0005f8 dde3      	RCALL	SUBB
+0005f9 dce7      	RCALL	SWAPP
+0005fa dcb0      	RCALL	RAT
+0005fb ddbc      	RCALL	PLUS
+0005fc dd97      	RCALL	QDUP
+0005fd db6d      	RCALL	QBRAN
+0005fe 0620      	.DW		NUMQ6
+0005ff 9701      	sbiw	tosl,1
+000600 dcb8      	RCALL	TOR
+                 NUMQ2:
+000601 dcd8      	RCALL	DUPP
+000602 dcb6      	RCALL	TOR
+000603 dc94      	RCALL	CAT
+000604 dd2f      	RCALL	BASE
+000605 db9c      	RCALL	AT
+000606 dfbc      	RCALL	DIGTQ
+000607 db63      	RCALL	QBRAN
+000608 0619      	.DW		NUMQ4
+000609 dcd7      	RCALL	SWAPP
+00060a dd29      	RCALL	BASE
+00060b db96      	RCALL	AT
+00060c de89      	RCALL	STAR
+00060d ddaa      	RCALL	PLUS
+00060e dc90      	RCALL	RFROM
+00060f 9601      	adiw	tosl,1
+000610 db42      	RCALL	DONXT
+000611 0601      	.DW		NUMQ2
+000612 dcc1      	RCALL	DROP
+000613 dc97      	RCALL	RAT
+000614 db56      	RCALL	QBRAN
+000615 0617      	.DW		NUMQ3
+000616 ddb3      	RCALL	NEGAT
+                 NUMQ3:
+000617 dcc9      	RCALL	SWAPP
+000618 c006      	RJMP	NUMQ5
+                 NUMQ4:
+000619 dc85      	RCALL	RFROM
+00061a dc84      	RCALL	RFROM
+00061b dd8f      	RCALL	DDROP
+00061c dd8e      	RCALL	DDROP
+00061d db24      	RCALL	DOLIT
+00061e 0000      	.DW		0
+                 NUMQ5:
+00061f dcba      	RCALL	DUPP
+                 NUMQ6:
+000620 dc7e      	RCALL	RFROM
+000621 dd89      	RCALL	DDROP
+000622 dc7c      	RCALL	RFROM
+000623 dd10      	RCALL	BASE
+000624 cb73      	RJMP	STORE
+                 
+                 ;; Basic I/O
+                 
+                 ;   KEY	( -- c )
+                 ;	Wait for and return an input character.
+                 
+000625 0bb2
+000626 4b03
+000627 5945      	COLON	3,"KEY"
+                 KEY:
+                 KEY1:
+000628 dae8      	RCALL	QRX
+000629 db41      	RCALL	QBRAN
+00062a 0628      	.DW		KEY1
+00062b 9508      	RET
+                 
+                 ;   SPACE	( -- )
+                 ;	Send the blank character to the output device.
+                 
+00062c 0c4c
+00062d 5305
+00062e 4150
+00062f 4543      	COLON	5,"SPACE"
+                 SPACE:
+000630 dd5a      	RCALL	BLANK
+000631 caf3      	RJMP	EMIT
+                 
+                 ;   CHARS	( +n c -- )
+                 ;	Send n characters to the output device.
+                 
+000632 0c5a
+000633 4305
+000634 4148
+000635 5352      	CODE	5,"CHARS"
+                 CHARS:
+000636 dcaa      	RCALL	SWAPP
+000637 dc81      	RCALL	TOR
+000638 c002      	RJMP	CHAR2
+                 CHAR1:
+000639 dca0      	RCALL	DUPP
+00063a daea      	RCALL	EMIT
+                 CHAR2:
+00063b db17      	RCALL	DONXT
+00063c 0639      	.DW		CHAR1
+00063d cc96      	RJMP	DROP
+                 
+                 ;   SPACES	( +n -- )
+                 ;	Send n spaces to the output device.
+                 
+00063e 0c66
+00063f 5306
+000640 4150
+000641 4543
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2093): macro 'COLON' called here
+000642 0053      	COLON	6,"SPACES"
+                 SPACS:
+000643 dd47      	RCALL	BLANK
+000644 cff1      	RJMP	CHARS
+                 
+                 ;   TYPE	( b u -- )
+                 ;	Output u characters from b.
+                 
+000645 0c7e
+000646 5404
+000647 5059
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2101): macro 'COLON' called here
+000648 0045      	COLON	4,"TYPE"
+                 TYPES:
+000649 dc6f      	RCALL	TOR
+00064a c003      	RJMP	TYPE2
+                 TYPE1:
+00064b de9b      	RCALL	COUNT
+00064c de6d      	RCALL	TCHAR
+00064d dad7      	RCALL	EMIT
+                 TYPE2:
+00064e db04      	RCALL	DONXT
+00064f 064b      	.DW		TYPE1
+000650 cc83      	RJMP	DROP
+                 
+                 ;   ITYPE	( b u -- )
+                 ;	Output u characters from b.
+                 
+000651 0c8c
+000652 4905
+000653 5954
+000654 4550      	COLON	5,"ITYPE"
+                 ITYPES:
+000655 dc63      	RCALL	TOR
+000656 c003      	RJMP	ITYPE2
+                 ITYPE1:
+000657 de9c      	RCALL	ICOUNT
+000658 de61      	RCALL	TCHAR
+000659 dacb      	RCALL	EMIT
+                 ITYPE2:
+00065a daf8      	RCALL	DONXT
+00065b 0657      	.DW		ITYPE1
+00065c cc77      	RJMP	DROP
+                 
+                 ;   CR	( -- )
+                 ;	Output a carriage return and a line feed.
+                 
+00065d 0ca4
+00065e 4302
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2133): macro 'COLON' called here
+00065f 0052      	COLON	2,"CR"
+                 CR:
+000660 dae1      	RCALL	DOLIT
+000661 000d      	.DW		CRR
+000662 dac2      	RCALL	EMIT
+000663 dade      	RCALL	DOLIT
+000664 000a      	.DW		LF
+000665 cabf      	RJMP	EMIT
+                 
+                 ;   do$	( -- a )
+                 ;	Return the address of a compiled string.
+                 
+000666 0cbc
+000667 6443
+000668 246f      	CODE	COMPO+3,"do$"
+                 DOSTR:
+000669 dc35      	RCALL	RFROM	;ra
+00066a dc34      	RCALL	RFROM	;ra a
+00066b dc6e      	RCALL	DUPP	;ra a a
+00066c dc6d      	RCALL	DUPP	;ra a a a
+00066d 01fc      	movw	zl,tosl
+00066e 0fee
+00066f 1fff
+000670 9185
+000671 9195      	readflashcell	tosl,tosh
+000672 2799      	clr		tosh	;ra a a count
+000673 dd09      	RCALL	TWOSL
+000674 dd43      	RCALL	PLUS
+000675 9601      	ADIW	TOSL,1	;ra a a' 
+000676 dc42      	RCALL	TOR	;ra a
+000677 dc69      	RCALL	SWAPP	;a ra
+000678 dc40      	RCALL	TOR	;a
+000679 dcfd      	RCALL	CELLS	;byte address
+00067a 9508      	RET
+                 
+                 ;   $"|	( -- a )
+                 ;	Run time routine compiled by $". Return address of a compiled string.
+                 
+00067b 0cce
+00067c 2443      	CODE	COMPO+3,'$'
+00067d 7c22      	.DB		'"','|'
+                 STRQP:
+00067e dfea      	RCALL	DOSTR
+00067f 9508      	RET				;force a call to do$
+                 
+                 ;   ."|	( -- )
+                 ;	Run time routine of ." . Output a compiled string.
+                 
+000680 0cf8
+000681 2e43      	CODE	COMPO+3,'.'
+000682 7c22      	.DB		'"','|'
+                 DOTQP:
+000683 dfe5      	RCALL	DOSTR
+000684 de6f      	RCALL	ICOUNT
+000685 cfcf      	RJMP	ITYPES
+                 
+                 ;   .R		( n +n -- )
+                 ;	Display an integer in a field of n columns, right justified.
+                 
+000686 0d02
+000687 2e02
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2185): macro 'COLON' called here
+000688 0052      	COLON	2,".R"
+                 DOTR:
+000689 dc2f      	RCALL	TOR
+00068a df1b      	RCALL	STR
+00068b dc13      	RCALL	RFROM
+00068c dc5e      	RCALL	OVER
+00068d dd4e      	RCALL	SUBB
+00068e dfb4      	RCALL	SPACS
+00068f cfb9      	RJMP	TYPES
+                 
+                 ;   U.R	( u +n -- )
+                 ;	Display an unsigned integer in n column, right justified.
+                 
+000690 0d0e
+000691 5503
+000692 522e      	COLON	3,"U.R"
+                 UDOTR:
+000693 dc25      	RCALL	TOR
+000694 dedd      	RCALL	BDIGS
+000695 def3      	RCALL	DIGS
+000696 df06      	RCALL	EDIGS
+000697 dc07      	RCALL	RFROM
+000698 dc52      	RCALL	OVER
+000699 dd42      	RCALL	SUBB
+00069a dfa8      	RCALL	SPACS
+00069b cfad      	RJMP	TYPES
+                 
+                 ;   U.	( u -- )
+                 ;	Display an unsigned integer in free format.
+                 
+00069c 0d22
+00069d 5502
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2213): macro 'COLON' called here
+00069e 002e      	COLON	2,"U."
+                 UDOT:
+00069f ded2      	RCALL	BDIGS
+0006a0 dee8      	RCALL	DIGS
+0006a1 defb      	RCALL	EDIGS
+0006a2 df8d      	RCALL	SPACE
+0006a3 cfa5      	RJMP	TYPES
+                 
+                 ;   .		( w -- )
+                 ;	Display an integer in free format, preceeded by a space.
+                 
+0006a4 0d3a
+0006a5 2e01      	COLON	1,"."
+                 DOT:
+0006a6 dc8d      	RCALL	BASE
+0006a7 dafa      	RCALL	AT
+0006a8 da99      	RCALL	DOLIT
+0006a9 000a      	.DW	10
+0006aa dc60      	RCALL	XORR	;?decimal
+0006ab dabf      	RCALL	QBRAN
+0006ac 06ae      	.DW	DOT1
+0006ad cff1      	RJMP	UDOT
+                 DOT1:	
+0006ae def7      	RCALL	STR
+0006af df80      	RCALL	SPACE
+0006b0 cf98      	RJMP	TYPES
+                 
+                 ;   ?	( a -- )
+                 ;	Display the contents in a memory cell.
+                 
+0006b1 0d4a
+0006b2 3f01      	COLON	1,"?"
+                 QUEST:
+0006b3 daee      	RCALL	AT
+0006b4 cff1      	RJMP	DOT
+                 
+                 ;; Parsing
+                 
+                 ;   parse	( b u c -- b u delta ; <string> )
+                 ;	Scan string delimited by c. Return found string and its offset.
+                 
+0006b5 0d64
+0006b6 7005
+0006b7 7261
+0006b8 6573      	CODE	5,"parse"
+                 PARS:
+0006b9 dc7f      	RCALL	TEMP
+0006ba dadd      	RCALL	STORE
+0006bb dc2f      	RCALL	OVER
+0006bc dbfc      	RCALL	TOR
+0006bd dc1c      	RCALL	DUPP
+0006be daac      	RCALL	QBRAN
+0006bf 06fb      	.DW		PARS8
+0006c0 9701      	SBIW	TOSL,1
+0006c1 dc77      	RCALL	TEMP
+0006c2 dbd5      	RCALL	CAT
+0006c3 dcc7      	RCALL	BLANK
+0006c4 dd28      	RCALL	EQUAL
+0006c5 daa5      	RCALL	QBRAN
+0006c6 06da      	.DW		PARS3
+0006c7 dbf1      	RCALL	TOR
+                 PARS1:
+0006c8 dcc2      	RCALL	BLANK
+0006c9 dc21      	RCALL	OVER
+0006ca dbcd      	RCALL	CAT	;skip leading blanks ONLY
+0006cb dd10      	RCALL	SUBB
+0006cc dc26      	RCALL	ZLESS
+0006cd dcf4      	RCALL	INVER
+0006ce da9c      	RCALL	QBRAN
+0006cf 06d9      	.DW		PARS2
+0006d0 9601      	ADIW	TOSL,1
+0006d1 da81      	RCALL	DONXT
+0006d2 06c8      	.DW		PARS1
+0006d3 dbcb      	RCALL	RFROM
+0006d4 dbff      	RCALL	DROP
+0006d5 da6c      	RCALL	DOLIT
+0006d6 0000      	.DW		0
+0006d7 dc02      	RCALL	DUPP
+0006d8 9508      	RET
+                 PARS2:
+0006d9 dbc5      	RCALL	RFROM
+                 PARS3:
+0006da dc10      	RCALL	OVER
+0006db dc05      	RCALL	SWAPP
+0006dc dbdc      	RCALL	TOR
+                 PARS4:
+0006dd dc5b      	RCALL	TEMP
+0006de dbb9      	RCALL	CAT
+0006df dc0b      	RCALL	OVER
+0006e0 dbb7      	RCALL	CAT
+0006e1 dcfa      	RCALL	SUBB	;scan for delimiter
+0006e2 dc56      	RCALL	TEMP
+0006e3 dbb4      	RCALL	CAT
+0006e4 dca6      	RCALL	BLANK
+0006e5 dd07      	RCALL	EQUAL
+0006e6 da84      	RCALL	QBRAN
+0006e7 06e9      	.DW		PARS5
+0006e8 dc0a      	RCALL	ZLESS
+                 PARS5:
+0006e9 da81      	RCALL	QBRAN
+0006ea 06f1      	.DW		PARS6
+0006eb 9601      	ADIW	TOSL,1
+0006ec da66      	RCALL	DONXT
+0006ed 06dd      	.DW		PARS4
+0006ee dbeb      	RCALL	DUPP
+0006ef dbc9      	RCALL	TOR
+0006f0 c005      	RJMP	PARS7
+                 PARS6:
+0006f1 dbad      	RCALL	RFROM
+0006f2 dbe1      	RCALL	DROP
+0006f3 dbe6      	RCALL	DUPP
+0006f4 9601      	ADIW	TOSL,1
+0006f5 dbc3      	RCALL	TOR
+                 PARS7:
+0006f6 dbf4      	RCALL	OVER
+0006f7 dce4      	RCALL	SUBB
+0006f8 dba6      	RCALL	RFROM
+0006f9 dba5      	RCALL	RFROM
+0006fa cce1      	RJMP	SUBB
+                 PARS8:
+0006fb dbef      	RCALL	OVER
+0006fc dba2      	RCALL	RFROM
+0006fd ccde      	RJMP	SUBB
+                 
+                 ;   PARSE	( c -- b u ; <string> )
+                 ;	Scan input stream and return counted string delimited by c.
+                 
+0006fe 0d6c
+0006ff 5005
+000700 5241
+000701 4553      	CODE	5,"PARSE"
+                 PARSE:
+000702 dbb6      	RCALL	TOR
+000703 de04      	RCALL	TIB
+000704 dc3f      	RCALL	INN
+000705 da9c      	RCALL	AT
+000706 dcb1      	RCALL	PLUS	;current input buffer pointer
+000707 dc42      	RCALL	NTIB
+000708 da99      	RCALL	AT
+000709 dc3a      	RCALL	INN
+00070a da97      	RCALL	AT
+00070b dcd0      	RCALL	SUBB	;remaining count
+00070c db92      	RCALL	RFROM
+00070d dfab      	RCALL	PARS
+00070e dc35      	RCALL	INN
+00070f cdcd      	RJMP	PSTOR
+                 
+                 ;   .(	( -- )
+                 ;	Output following string up to next ) .
+                 
+000710 0dfe
+000711 2e82
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2355): macro 'COLON' called here
+000712 0028      	COLON	IMEDD+2,".("
+                 DOTPR:
+000713 da2e      	RCALL	DOLIT
+000714 0029      	.DW		')'
+000715 dfec      	RCALL	PARSE
+000716 cf32      	RJMP	TYPES
+                 
+                 ;   (	( -- )
+                 ;	Ignore following string up to next ) . A comment.
+                 
+000717 0e22
+000718 2881      	COLON	IMEDD+1,"("
+                 PAREN:
+000719 da28      	RCALL	DOLIT
+00071a 0029      	.DW		')'
+00071b dfe6      	RCALL	PARSE
+00071c cc8e      	RJMP	DDROP
+                 
+                 ;   \	( -- )
+                 ;	Ignore following text till the end of line.
+                 
+00071d 0e30
+00071e 5c81
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2375): macro 'COLON' called here
+00071f 005c      	COLON	IMEDD+1,"\\"
+                 BKSLA:
+000720 da21      	RCALL	DOLIT
+000721 000d      	.DW		$D
+000722 dfdf      	RCALL	PARSE
+000723 cc87      	RJMP	DDROP
+                 
+                 
+                 ;   CHAR	( -- c )
+                 ;	Parse next word and return its first character.
+                 
+000724 0e3c
+000725 4304
+000726 4148
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2386): macro 'COLON' called here
+000727 0052      	COLON	4,"CHAR"
+                 CHARR:
+000728 dc62      	RCALL	BLANK
+000729 dfd8      	RCALL	PARSE
+00072a dba9      	RCALL	DROP
+00072b cb6c      	RJMP	CAT
+                 
+                 ;   TOKEN	( -- a ; <string> )
+                 ;	Parse a word from input stream and copy it to name dictionary.
+                 
+00072c 0e4a
+00072d 5405
+00072e 4b4f
+00072f 4e45      	CODE	5,"TOKEN"
+                 TOKEN:
+000730 dc5a      	RCALL	BLANK
+000731 dfd0      	RCALL	PARSE
+000732 da0f      	RCALL	DOLIT
+000733 001f      	.DW		31
+000734 dce5      	RCALL	MIN
+000735 ddc6      	RCALL	HEREE
+000736 dc7d      	RCALL 	DDUP
+000737 db56      	RCALL	CSTOR
+000738 dc7b      	RCALL 	DDUP
+000739 dc7e      	RCALL	PLUS
+00073a 9601      	ADIW	TOSL,1
+00073b da06      	RCALL	DOLIT
+00073c 0000      	.DW		0
+00073d dba3      	RCALL	SWAPP
+00073e db4f      	RCALL	CSTOR
+00073f 9601      	ADIW	TOSL,1
+000740 dba0      	RCALL	SWAPP
+000741 ddf9      	RCALL	UMOVE
+000742 cdb9      	RJMP	HEREE
+                 
+                 ;   WORD	( c -- a ; <string> )
+                 ;	Parse a word from input stream and copy it to code dictionary.
+                 
+000743 0e5a
+000744 5704
+000745 524f
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2421): macro 'COLON' called here
+000746 0044      	COLON	4,"WORD"
+                 WORDD:
+000747 dfba      	RCALL	PARSE
+000748 ddb3      	RCALL	HEREE
+000749 dc6a      	RCALL 	DDUP
+00074a db43      	RCALL	CSTOR
+00074b dc68      	RCALL 	DDUP
+00074c dc6b      	RCALL	PLUS
+00074d 9601      	ADIW	TOSL,1
+00074e d9f3      	RCALL	DOLIT
+00074f 0000      	.DW		0
+000750 db90      	RCALL	SWAPP
+000751 db3c      	RCALL	CSTOR
+000752 9601      	ADIW	TOSL,1
+000753 db8d      	RCALL	SWAPP
+000754 ddc6      	RCALL	CMOVE
+000755 cda6      	RJMP	HEREE
+                 
+                 ;; Dictionary search
+                 
+                 ;   NAME>	( na -- ca )
+                 ;	Return a code address given a name address.
+                 
+000756 0e88
+000757 4e05
+000758 4d41
+000759 3e45      	COLON	5,"NAME>"
+                 NAMET:
+00075a dd99      	RCALL	ICOUNT
+00075b d9e6      	RCALL	DOLIT
+00075c 001f      	.DW		$1F
+00075d db9d      	RCALL	ANDD
+00075e dc59      	RCALL	PLUS
+00075f cc25      	RJMP	ALGND
+                 
+                 ;   SAME?	( b a u -- b a f \ -0+ )
+                 ;	Compare u bytes in two strings. Return 0 if identical.
+                 
+000760 0eae
+000761 5305
+000762 4d41
+000763 3f45      	CODE	5,"SAME?"
+                 SAMEQ:
+000764 dc18      	RCALL	TWOSL
+000765 db53      	RCALL	TOR
+000766 c010      	RJMP	SAME2
+                 SAME1:
+000767 db83      	RCALL	OVER
+000768 db42      	RCALL	RAT
+000769 dc0d      	RCALL	CELLS
+00076a dc4d      	RCALL	PLUS
+00076b da36      	RCALL	AT
+00076c db7e      	RCALL	OVER
+00076d db3d      	RCALL	RAT
+00076e dc08      	RCALL	CELLS
+00076f dc48      	RCALL	PLUS
+000770 da38      	RCALL	IAT
+000771 dc6a      	RCALL	SUBB
+000772 dc21      	RCALL	QDUP
+000773 d9f7      	RCALL	QBRAN
+000774 0777      	.DW		SAME2
+000775 db29      	RCALL	RFROM
+000776 cb5d      	RJMP	DROP
+                 SAME2:
+000777 d9db      	RCALL	DONXT
+000778 0767      	.DW		SAME1
+000779 d9c8      	RCALL	DOLIT
+00077a 0000      	.DW		0
+00077b 9508      	RET
+                 
+                 ;   find	( a va -- ca na | a F )
+                 ;	Search a vocabulary for a string. Return ca and na if succeeded.
+                 
+00077c 0ec2
+00077d 6604
+00077e 6e69
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2488): macro 'CODE' called here
+00077f 0064      	CODE	4,"find"
+                 FIND:
+000780 db60      	RCALL	SWAPP
+000781 db58      	RCALL	DUPP
+000782 db15      	RCALL	CAT
+000783 dbb5      	RCALL	TEMP
+000784 da13      	RCALL	STORE
+000785 db54      	RCALL	DUPP
+000786 da1b      	RCALL	AT
+000787 db31      	RCALL	TOR
+000788 9602      	ADIW	TOSL,2	;va a+2 --
+000789 db57      	RCALL	SWAPP	;a+2 va --
+                 FIND1:
+00078a db4f      	RCALL	DUPP
+00078b d9df      	RCALL	QBRAN
+00078c 079f      	.DW		FIND6
+00078d db4c      	RCALL	DUPP
+00078e da1a      	RCALL	IAT
+00078f d9b2      	RCALL	DOLIT
+000790 ff3f      	.DW		$FF3F
+000791 db69      	RCALL	ANDD
+000792 db18      	RCALL	RAT
+000793 db77      	RCALL	XORR
+000794 d9d6      	RCALL	QBRAN
+000795 079a      	.DW		FIND2
+000796 9602      	ADIW	TOSL,2	;a+2 va+2 --
+000797 d9aa      	RCALL	DOLIT
+000798 ffff      	.DW		-1
+000799 c004      	RJMP	FIND3
+                 FIND2:
+00079a 9602      	ADIW	TOSL,2	;a+2 va+2 --
+00079b db9d      	RCALL	TEMP
+00079c da05      	RCALL	AT
+00079d dfc6      	RCALL	SAMEQ
+                 FIND3:
+00079e c005      	RJMP	FIND4
+                 FIND6:
+00079f daff      	RCALL	RFROM
+0007a0 db33      	RCALL	DROP
+0007a1 db3f      	RCALL	SWAPP
+0007a2 9702      	SBIW	TOSL,2
+0007a3 cb3d      	RJMP	SWAPP
+                 FIND4:
+0007a4 d9c6      	RCALL	QBRAN
+0007a5 07a9      	.DW		FIND5
+0007a6 9704      	SBIW	TOSL,4
+0007a7 da01      	RCALL	IAT
+0007a8 cfe1      	RJMP	FIND1
+                 FIND5:
+0007a9 daf5      	RCALL	RFROM
+0007aa db29      	RCALL	DROP
+0007ab db35      	RCALL	SWAPP
+0007ac db27      	RCALL	DROP
+0007ad 9702      	SBIW	TOSL,2
+0007ae db2b      	RCALL	DUPP
+0007af dfaa      	RCALL	NAMET
+0007b0 cb30      	RJMP	SWAPP
+                 
+                 ;   NAME?	( a -- ca na | a F )
+                 ;	Search all context vocabularies for a string.
+                 
+0007b1 0efa
+0007b2 4e05
+0007b3 4d41
+0007b4 3f45      	CODE	5,"NAME?"
+                 NAMEQ:
+0007b5 dbac      	RCALL	CNTXT
+0007b6 d9eb      	RCALL	AT
+0007b7 cfc8      	RJMP	FIND
+                 
+                 ;; Terminal response
+                 
+                 ;   ^H	( bot eot cur -- bot eot cur )
+                 ;	Backup the cursor by one character.
+                 
+0007b8 0f64
+0007b9 5e02
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2560): macro 'CODE' called here
+0007ba 0048      	CODE	2,"^H"
+                 BKSP:
+0007bb dafd      	RCALL	TOR
+0007bc db2e      	RCALL	OVER
+0007bd dae1      	RCALL	RFROM
+0007be db22      	RCALL	SWAPP
+0007bf db2b      	RCALL	OVER
+0007c0 db4a      	RCALL	XORR
+0007c1 d9a9      	RCALL	QBRAN
+0007c2 07cc      	.DW		BACK1
+0007c3 d97e      	RCALL	DOLIT
+0007c4 0008      	.DW		BKSPP
+0007c5 d95f      	RCALL	EMIT
+0007c6 9701      	SBIW	TOSL,1
+0007c7 dbc3      	RCALL	BLANK
+0007c8 d95c      	RCALL	EMIT
+0007c9 d978      	RCALL	DOLIT
+0007ca 0008      	.DW		BKSPP
+0007cb d959      	RCALL	EMIT
+                 BACK1:
+0007cc 9508      	RET
+                 
+                 ;   TAP	( bot eot cur c -- bot eot cur )
+                 ;	Accept and echo the key stroke and bump the cursor.
+                 
+0007cd 0f72
+0007ce 5403
+0007cf 5041      	CODE	3,"TAP"
+                 TAP:
+0007d0 db09      	RCALL	DUPP
+0007d1 d953      	RCALL	EMIT
+0007d2 db18      	RCALL	OVER
+0007d3 daba      	RCALL	CSTOR
+0007d4 9601      	adiw	tosl,1
+0007d5 9508      	ret
+                 
+                 ;   kTAP	( bot eot cur c -- bot eot cur )
+                 ;	Process a key stroke, CR or backspace.
+                 
+0007d6 0f9c
+0007d7 6b04
+0007d8 4154
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2597): macro 'CODE' called here
+0007d9 0050      	CODE	4,"kTAP"
+                 KTAP:
+0007da daff      	RCALL	DUPP
+0007db 970d      	SBIW	TOSL,CRR
+0007dc d98e      	RCALL	QBRAN
+0007dd 07e4      	.DW		KTAP2
+0007de 9708      	SBIW	TOSL,BKSPP
+0007df d98b      	RCALL	QBRAN
+0007e0 07e3      	.DW		KTAP1
+0007e1 dba9      	RCALL	BLANK
+0007e2 cfed      	RJMP	TAP
+                 KTAP1:
+0007e3 cfd7      	RJMP	BKSP
+                 KTAP2:
+0007e4 daef      	RCALL	DROP
+0007e5 dafb      	RCALL	SWAPP
+0007e6 daed      	RCALL	DROP
+0007e7 caf2      	RJMP	DUPP
+                 
+                 ;   accept	( b u -- b u )
+                 ;	Accept characters to input buffer. Return with actual count.
+                 
+0007e8 0fae
+0007e9 6106
+0007ea 6363
+0007eb 7065
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2619): macro 'CODE' called here
+0007ec 0074      	CODE	6,"accept"
+                 ACCEP:
+0007ed dafd      	RCALL	OVER
+0007ee dbc9      	RCALL	PLUS
+0007ef dafb      	RCALL	OVER
+                 ACCP1:
+0007f0 dbc3      	RCALL	DDUP
+0007f1 db19      	RCALL	XORR
+0007f2 d978      	RCALL	QBRAN
+0007f3 0801      	.DW		ACCP4
+0007f4 de33      	RCALL	KEY
+0007f5 dae4      	RCALL	DUPP
+0007f6 db94      	RCALL	BLANK
+0007f7 dbe4      	RCALL	SUBB
+0007f8 d949      	RCALL	DOLIT
+0007f9 00ff      	.DW		$FF    ; $FF for chinese ; $5F  FOR ASCII CODE ; albert  2012/5/2 
+0007fa dbfe      	RCALL	ULESS
+0007fb d96f      	RCALL	QBRAN
+0007fc 07ff      	.DW		ACCP2
+0007fd dfd2      	RCALL	TAP
+0007fe c001      	RJMP	ACCP3
+                 ACCP2:
+0007ff dfda      	RCALL	KTAP
+                 ACCP3:
+000800 cfef      	RJMP	ACCP1
+                 ACCP4:
+000801 dad2      	RCALL	DROP
+000802 dae8      	RCALL	OVER
+000803 cbd8      	RJMP	SUBB
+                 
+                 ;   EXPECT	( b u -- )
+                 ;	Accept input stream and store count in SPAN.
+                 
+000804 0fd2
+000805 4506
+000806 5058
+000807 4345
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2652): macro 'COLON' called here
+000808 0054      	COLON	6,"EXPECT"
+                 EXPEC:
+000809 dfe3      	RCALL	ACCEP
+00080a db34      	RCALL	SPAN
+00080b d98c      	RCALL	STORE
+00080c cac7      	RJMP	DROP
+                 
+                 ;   QUERY	( -- )
+                 ;	Accept input stream to terminal input buffer.
+                 
+00080d 100a
+00080e 5105
+00080f 4555
+000810 5952      	COLON	5,"QUERY"
+                 QUERY:
+000811 dcf6      	RCALL	TIB
+000812 d92f      	RCALL	DOLIT
+000813 0050      	.DW		80
+000814 dfd8      	RCALL	ACCEP
+000815 db34      	RCALL	NTIB
+000816 d981      	RCALL	STORE
+000817 dabc      	RCALL	DROP
+000818 d929      	RCALL	DOLIT
+000819 0000      	.DW		0
+00081a db29      	RCALL	INN
+00081b c97c      	RJMP	STORE
+                 
+                 ;; Error handling
+                 
+                 
+                 ;   ERROR	( a -- )
+                 ;	Return address of a null string with zero count.
+                 
+00081c 101c
+00081d 4505
+00081e 5252
+00081f 524f      	COLON	5,"ERROR"
+                 ERROR:
+000820 de0f      	RCALL	SPACE
+000821 dcc5      	RCALL	COUNT
+000822 de26      	RCALL	TYPES
+000823 d91e      	RCALL	DOLIT
+000824 003f      	.DW		$3F
+000825 d8ff      	RCALL	EMIT
+000826 d00d      	RCALL   ERR_HANDLING  ; CAHNGE   
+                 ABORT:
+000827 de38      	RCALL	CR
+000828 da4d      	RCALL	EMPTY_BUF
+000829 efc0      	ldi 	yl,low(SPP)
+00082a e0d6      	ldi 	yh,high(SPP)
+00082b c077      	RJMP	QUIT
+00082c 103a
+00082d 450c
+00082e 5252
+00082f 485f
+000830 4e41
+000831 4c44
+000832 4e49
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2697): macro 'COLON' called here
+000833 0047      COLON	12,"ERR_HANDLING" ; ADD FOR CHANGE 8 / 23  
+                 ERR_HANDLING:
+000834 940c 02ab     JMP  RAT
+000836 105a
+000837 410a
+000838 4c4c
+000839 574f
+00083a 425f
+00083b 4f4f
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2700): macro 'COLON' called here
+00083c 0054      COLON	10,"ALLOW_BOOT" ;  ADD FOR CHANGE 8 / 30 
+                 ALLOW_BOOT:
+00083d 940c 02ab     JMP  RAT
+00083f 9508      	RET
+                 
+                 
+                 ;   abort"	( f -- )
+                 ;	Run time routine of ABORT" . Abort with a message.
+                 
+000840 106e
+000841 6146
+000842 6f62
+000843 7472      	CODE	COMPO+6,"abort"
+C:\ksanapc\ide328_2\328eForth.asm(2710): warning: .cseg .db misalignment - padding zero byte
+000844 0022      	.DB		'"'
+                 ABORQ:
+000845 d925      	RCALL	QBRAN
+000846 084c      	.DW		ABOR1	;text flag
+000847 de21      	RCALL	DOSTR
+000848 dcab      	RCALL	ICOUNT	;pass error string
+000849 de0b      	RCALL	ITYPES
+00084a dfdc      	RCALL	ABORT
+00084b c057      	RJMP	QUIT
+                 ABOR1:
+00084c de1c      	RCALL	DOSTR
+00084d ca86      	RJMP	DROP
+                 
+                 ;; The text interpreter
+                 
+                 ;   $INTERPRET	( a -- )
+                 ;	Interpret a word. If failed, try to convert it to an integer.
+                 
+00084e 1082
+00084f 240a
+000850 4e49
+000851 4554
+000852 5052
+000853 4552
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2728): macro 'CODE' called here
+000854 0054      	CODE	10,"$INTERPRET"
+                 INTER:
+000855 df5f      	RCALL	NAMEQ
+000856 db3d      	RCALL	QDUP	;?defined
+000857 d913      	RCALL	QBRAN
+000858 0867      	.DW		INTE1
+000859 d94f      	RCALL	IAT
+00085a d8e7      	RCALL	DOLIT
+00085b 0040      	.DW		COMPO
+00085c da9e      	RCALL	ANDD	;?compile only lexicon bits
+00085d dfe7      	RCALL	ABORQ
+00085e 200d
+00085f 6f63
+000860 706d
+000861 6c69
+000862 2065
+000863 6e6f
+000864 796c      	.DB		13," compile only"
+000865 d922      	RCALL	EXECU
+000866 9508      	RET	;execute defined word
+                 INTE1:
+000867 dd75      	RCALL	NUMBQ
+000868 d902      	RCALL	QBRAN
+000869 086b      	.DW		INTE2
+00086a 9508      	RET
+                 INTE2:
+00086b cfb4      	RJMP	ERROR	;error
+                 
+                 ;   [	( -- )
+                 ;	Start the text interpreter.
+                 
+00086c 109e
+00086d 5b81      	COLON	IMEDD+1,"["
+                 LBRAC:
+00086e d8d3      	RCALL	DOLIT
+00086f 10aa      	.DW		INTER*2
+000870 dae5      	RCALL	TEVAL
+000871 c926      	RJMP	STORE
+                 
+                 ;   .OK	( -- )
+                 ;	Display "ok" only while interpreting.
+                 
+000872 10da
+000873 2e03
+000874 4b4f      	CODE	3,".OK"
+                 DOTOK:
+000875 d8cc      	RCALL	DOLIT
+000876 10aa      	.DW		INTER*2
+000877 dade      	RCALL	TEVAL
+000878 d929      	RCALL	AT
+000879 db73      	RCALL	EQUAL
+00087a d8f0      	RCALL	QBRAN
+00087b 0880      	.DW		DOTO1
+00087c de06      	RCALL	DOTQP
+00087d 2004
+00087e a5e5
+00087f 20bd      	.DB		4," 好 " ; 4, " ok " ; albert  2012/5/2
+000880 cddf      DOTO1:	RJMP	CR
+                 
+                 ;   ?STACK	( -- )
+                 ;	Abort if the data stack underflows.
+                 
+000881 10e6
+000882 3f06
+000883 5453
+000884 4341
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2779): macro 'CODE' called here
+000885 004b      	CODE	6,"?STACK"
+                 QSTAC:
+000886 dc44      	RCALL	DEPTH
+000887 da6b      	RCALL	ZLESS	;check only for underflow
+000888 dfbc      	RCALL	ABORQ
+000889 200a
+00088a 6e75
+00088b 6564
+00088c 6672
+00088d 6f6c
+C:\ksanapc\ide328_2\328eForth.asm(2784): warning: .cseg .db misalignment - padding zero byte
+00088e 0077      	.DB		10," underflow"
+00088f 9508      	RET
+                 
+                 ;   EVAL	( -- )
+                 ;	Interpret the input stream.
+                 
+000890 1104
+000891 4504
+000892 4156
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2790): macro 'COLON' called here
+000893 004c      	COLON	4,"EVAL"
+                 EVAL:
+000894 de9b      EVAL1:	RCALL	TOKEN
+000895 da44      	RCALL	DUPP
+000896 da01      	RCALL	CAT	;?input stream empty
+000897 d8d3      	RCALL	QBRAN
+000898 089d      	.DW		EVAL2
+000899 dabc      	RCALL	TEVAL
+00089a dc76      	RCALL	ATEXE
+                 ;	RCALL	INTER
+00089b dfea      	RCALL	QSTAC	;evaluate input, check stack
+00089c cff7      	RJMP	EVAL1
+                 EVAL2:
+00089d da36      	RCALL	DROP
+00089e cfd6      	RJMP	DOTOK
+                 
+                 ;; Shell
+                 
+                 ;   QUIT	( -- )
+                 ;	Reset return stack pointer and start text interpreter.
+                 
+00089f 1122
+0008a0 5104
+0008a1 4955
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2811): macro 'COLON' called here
+0008a2 0054      	COLON	4,"QUIT"
+                 QUIT:
+                    
+0008a3 efa0      	ldi 	xl,low(RPP)
+0008a4 bfad      	out_ 	SPL,xl
+0008a5 e0b7      	ldi 	xh,high(RPP)
+0008a6 bfbe      	out_ 	SPH,xh
+0008a7 d89a      	RCALL	DOLIT
+0008a8 0700      	.DW		TIBB
+0008a9 daa6      	RCALL	TTIB
+0008aa d8ed      	RCALL	STORE
+                 QUIT1:
+0008ab dfc2      	RCALL	LBRAC	;start interpretation
+                 QUIT2:
+0008ac d895      	RCALL	DOLIT	; 		20130926 sam
+0008ad 0006      	.DW		6		; ACK 	20130926 sam
+0008ae d876      	RCALL	EMIT	; 		20130926 sam
+0008af df61      	RCALL	QUERY	;get input
+0008b0 dfe3      	RCALL	EVAL
+0008b1 cffa      	RJMP	QUIT2	;continue till error
+                 
+                 ;; The compiler
+                 
+                 ;   '	( -- ca )
+                 ;	Search context vocabularies for the next word in input stream.
+                 
+0008b2 1140
+0008b3 2701      	COLON	1,"'"
+                 TICK:
+0008b4 de7b      	RCALL	TOKEN
+0008b5 deff      	RCALL	NAMEQ	;?defined
+0008b6 d8b4      	RCALL	QBRAN
+0008b7 08b9      	.DW		TICK1
+0008b8 9508      	RET				;yes, push code address
+                 TICK1:
+0008b9 cf66      	RJMP	ERROR	;no, error
+                 
+                 ;; Tools
+                 
+                 ;   DUMP	( a u -- )
+                 ;	Dump 128 bytes from ain RAM, in a formatted manner.
+                 
+0008ba 1166
+0008bb 4404
+0008bc 4d55
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2852): macro 'COLON' called here
+0008bd 0050      	COLON	4,"DUMP"
+                 DUMP:
+0008be d883      	RCALL	DOLIT
+0008bf 0007      	.DW		7
+0008c0 d9f8      	RCALL	TOR		;start count down loop
+0008c1 dd9e      DUMP1:	RCALL	CR
+0008c2 da17      	RCALL	DUPP
+0008c3 d87e      	RCALL	DOLIT
+0008c4 0005      	.DW		5
+0008c5 ddcd      	RCALL	UDOTR
+0008c6 dd69      	RCALL	SPACE
+0008c7 d87a      	RCALL	DOLIT
+0008c8 000f      	.DW		15
+0008c9 d9ef      	RCALL	TOR
+                 DUMP2:
+0008ca dc1c      	RCALL	COUNT
+0008cb d876      	RCALL	DOLIT
+0008cc 0003      	.DW		3
+0008cd ddc5      	RCALL	UDOTR
+0008ce d884      	RCALL	DONXT	;display printable characters
+0008cf 08ca      	.DW		DUMP2
+0008d0 dd5f      	RCALL	SPACE
+0008d1 da08      	RCALL	DUPP
+0008d2 d86f      	RCALL	DOLIT
+0008d3 0010      	.DW		16
+0008d4 db07      	RCALL	SUBB
+0008d5 d86c      	RCALL	DOLIT
+0008d6 0010      	.DW		16
+0008d7 dd71      	RCALL	TYPES
+0008d8 d87a      	RCALL	DONXT
+0008d9 08c1      	.DW		DUMP1	;loop till done
+0008da c9f9      	RJMP	DROP
+                 
+                 ;   IDUMP	( a -- )
+                 ;	Dump 128 bytes from a in flash, in a formatted manner.
+                 
+0008db 1176
+0008dc 4905
+0008dd 5544
+0008de 504d      	COLON	5,"IDUMP"
+                 IDUMP:
+0008df d862      	RCALL	DOLIT
+0008e0 0007      	.DW		7
+0008e1 d9d7      	RCALL	TOR	;start count down loop
+                 IDUMP1:
+0008e2 dd7d      	RCALL	CR
+0008e3 d9f6      	RCALL	DUPP
+0008e4 d85d      	RCALL	DOLIT
+0008e5 0005      	.DW		5
+0008e6 ddac      	RCALL	UDOTR
+0008e7 dd48      	RCALL	SPACE
+0008e8 d859      	RCALL	DOLIT
+0008e9 000f      	.DW		15
+0008ea d9ce      	RCALL	TOR
+                 IDUMP2:
+0008eb dc08      	RCALL	ICOUNT
+0008ec d855      	RCALL	DOLIT
+0008ed 0003      	.DW		3
+0008ee dda4      	RCALL	UDOTR
+0008ef d863      	RCALL	DONXT	;display printable characters
+0008f0 08eb      	.DW		IDUMP2
+0008f1 dd3e      	RCALL	SPACE
+0008f2 d9e7      	RCALL	DUPP
+0008f3 d84e      	RCALL	DOLIT
+0008f4 0010      	.DW		16
+0008f5 dae6      	RCALL	SUBB
+0008f6 d84b      	RCALL	DOLIT
+0008f7 0010      	.DW		16
+0008f8 dd5c      	RCALL	ITYPES
+0008f9 d859      	RCALL	DONXT
+0008fa 08e2      	.DW		IDUMP1	;loop till done
+0008fb c9d8      	RJMP	DROP
+                 
+                 
+                 ;   .S	( ... -- ... )
+                 ;	Display the contents of the data stack.
+                 
+0008fc 11b8
+0008fd 2e02
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(2926): macro 'COLON' called here
+0008fe 0053      	COLON	2,".S"
+                 DOTS:
+0008ff dbcb      	RCALL	DEPTH	;stack depth
+000900 d9b8      	RCALL	TOR	;start count down loop
+000901 c003      	RJMP	DOTS2	;skip first pass
+                 DOTS1:
+000902 d9a8      	RCALL	RAT
+000903 dbd1      	RCALL	PICK
+000904 dda1      	RCALL	DOT	;index stack, display contents
+                 DOTS2:
+000905 d84d      	RCALL	DONXT 
+000906 0902      	.DW		DOTS1	;loop till done
+000907 dd7b      	RCALL	DOTQP
+000908 2004
+000909 733c
+C:\ksanapc\ide328_2\328eForth.asm(2939): warning: .cseg .db misalignment - padding zero byte
+00090a 0070      	.DB		4," <sp"
+00090b 9508      	RET
+                 
+                 ;   >NAME	( ca -- na | F )
+                 ;	Convert code address to a name address.
+                 
+00090c 11fa
+00090d 3e05
+00090e 414e
+00090f 454d      	CODE	5,">NAME"
+                 TNAME:
+000910 d9a8      	RCALL	TOR
+000911 da50      	RCALL	CNTXT
+000912 d88f      	RCALL	AT	;na
+                 TNAM1:	
+000913 d9c6      	RCALL	DUPP	;na na
+000914 d856      	RCALL	QBRAN
+000915 0920      	.DW		TNAM2
+000916 d9c3      	RCALL	DUPP	;na na
+000917 de42      	RCALL	NAMET	;na ca
+000918 d992      	RCALL	RAT	;na ca ca
+000919 d9f1      	RCALL	XORR	;na f
+00091a d850      	RCALL	QBRAN
+00091b 0920      	.DW		TNAM2
+00091c 9702      	SBIW	TOSL,2	;la
+00091d d88b      	RCALL	IAT	;na'
+00091e d85b      	RCALL	BRAN
+00091f 0913      	.DW		TNAM1
+                 TNAM2:
+000920 d97e      	RCALL	RFROM	;na or 0
+000921 c9b2      	RJMP	DROP
+                 
+                 ;   .ID	( na -- )
+                 ;	Display the name at address.
+                 
+000922 121a
+000923 2e03
+000924 4449      	CODE	3,".ID"
+                 DOTID:
+000925 dbce      	RCALL	ICOUNT
+000926 d81b      	RCALL	DOLIT
+000927 001f      	.DW		31
+000928 d9d2      	RCALL	ANDD
+000929 cd2b      	RJMP 	ITYPES
+                 
+                 ;   WORDS	( -- )
+                 ;	Display the names in the context vocabulary.
+                 
+00092a 1246
+00092b 5705
+00092c 524f
+00092d 5344      	COLON	5,"WORDS"
+                 WORDS:
+00092e dd31      	RCALL	CR
+00092f da32      	RCALL	CNTXT
+000930 d871      	RCALL	AT	;na
+                 WORS1:	
+000931 da62      	RCALL	QDUP	;end of list?
+000932 d838      	RCALL	QBRAN
+000933 093b      	.DW		WORS2
+000934 d9a5      	RCALL	DUPP	;na na
+000935 dcfa      	RCALL	SPACE
+000936 dfee      	RCALL	DOTID	;display a name
+000937 9702      	SBIW	TOSL,2	;la
+000938 d870      	RCALL	IAT	;na'
+000939 d840      	RCALL	BRAN
+00093a 0931      	.DW		WORS1
+                 WORS2:
+00093b 9508      	RET
+                 
+                 
+                 ;; Hardware reset
+                 
+                 ;   hi	( -- )
+                 ;	Display the sign-on message of eForth.
+                 
+00093c 1256
+00093d 6802
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3007): macro 'CODE' called here
+00093e 0069      	CODE	2,"hi"
+                 HI:
+                 ;	RCALL	STOIO
+00093f dd20      	RCALL	CR
+000940 dd42      	RCALL	DOTQP 	;initialize I/O
+000941 3311
+000942 3832
+000943 4665
+000944 726f
+000945 6874
+000946 4420
+000947 5645
+000948 2e30
+000949 3437      	.DB		17,"328eForth DEV0.74"	;model ; 
+00094a cd15      	RJMP	CR
+                 
+                 ;   COLD	( -- )
+                 ;	The hilevel cold start sequence.
+                 
+00094b 127a
+00094c 4304
+00094d 4c4f
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3018): macro 'COLON' called here
+00094e 0044      	COLON	4,"COLD"
+                 COLD:
+                 COLD1:
+00094f 940e 0131 	CALL	STOIO	
+000951 940e 0142 	CALL	DOLIT
+000953 0100      	.DW		$100
+000954 d985      	RCALL	DUPP
+000955 940e 0979 	CALL	READ	;initialize user area
+000957 940e 0142 	CALL	DOLIT	;init older buffer
+000959 011e      	.DW		OLDER
+00095a d847      	RCALL	AT		;
+00095b d8d1      	RCALL	READ_FLASH
+00095c d8f3      	RCALL	SWITCH
+00095d 940e 0142 	CALL	DOLIT	;init newer buffer
+00095f 011e      	.DW		OLDER
+000960 d841      	RCALL	AT		;
+000961 d8cb      	RCALL	READ_FLASH
+000962 d8ed      	RCALL	SWITCH
+000963 da47      	RCALL	DDROP   
+000964 940e 083d 	CALL	ALLOW_BOOT ; M
+000966 d9c7      	RCALL	TBOOT	
+000967 dba9      	RCALL	ATEXE
+000968 cf3a      	RJMP	QUIT	;start interpretation
+                 
+                 
+                 ; Page Erase
+                 ;	ERASE ( a -- )
+                 ;	Erase a page of flash memory
+                 
+000969 1298
+00096a 4505
+00096b 4152
+00096c 4553      	COLON	5,"ERASE"
+00096d 940c 3fd0 	JMP	ERASE
+                 
+                 ; Page Write
+                 ; 	WRITE ( ram flash -- )	
+                 ; 	transfer data from RAM to Flash page buffer
+                 
+00096f 12d4
+000970 5705
+000971 4952
+000972 4554      	COLON	5,"WRITE";; Device dependent I/O
+000973 940c 3fd7 	JMP	WRITE
+                 
+                 ; Page Read
+                 ; 	READ ( flash ram -- )	
+                 ; 	transfer data from Flash to RAM page buffer
+                 
+000975 12e0
+000976 5204
+000977 4145
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3061): macro 'COLON' called here
+000978 0044      	COLON	4,"READ"
+                 READ:
+000979 01dc      	movw	xl,tosl
+00097a 9189
+00097b 9199      	loadtos
+00097c 01fc      	movw	zl,tosl
+00097d 9189
+00097e 9199      	loadtos
+                 READ_1:	
+                 ; read back and check, optional
+00097f e860      	ldi 	looplo, low(PAGESIZEB) ;init loop variable
+                 Rdloop:
+000980 9005      	lpm 	r0, Z+
+000981 920d      	st 		X+, r0
+000982 5061      	subi 	looplo, 1 ;use subi for PAGESIZEB<=256
+000983 f7e1       	brne 	Rdloop
+000984 9508      	ret
+                 
+                 .equ 	PAGESIZEB = PAGESIZE*2 ;PAGESIZEB is page size in BYTES, not words
+                 .def	spmcrval = r20
+                 .def	looplo = r22
+                 .def	loophi = r23
+                 
+                 
+                 ;===============================================================
+                 ; Compiler
+                 
+                 ; .org	$100   ;
+                 
+                 ;   1+	( a -- a )
+                 ;	Add 1 to address.
+                 
+000985 12ec
+000986 3102
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3091): macro 'COLON' called here
+000987 002b      	COLON	2,"1+"
+                 ONEP:
+000988 9601      	adiw	tosl,1
+000989 9508      	ret
+                 
+                 ;   1-	( a -- a )
+                 ;	Subtract 1 from address.
+                 
+00098a 130c
+00098b 3102
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3099): macro 'COLON' called here
+00098c 002d      	COLON	2,"1-"
+                 ONEM:
+00098d 9701      	sbiw	tosl,1
+00098e 9508      	ret
+                 
+                 
+                 ;   2+	( a -- a )
+                 ;	Add cell size in byte to address.
+                 
+00098f 1316
+000990 3202
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3108): macro 'COLON' called here
+000991 002b      	COLON	2,"2+"
+                 CELLP:
+000992 9602      	adiw	tosl,2
+000993 9508      	ret
+                 
+                 
+                 ;   2-	( a -- a )
+                 ;	Subtract cell size in byte from address.
+                 
+000994 1320
+000995 3202
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3117): macro 'COLON' called here
+000996 002d      	COLON	2,"2-"
+                 CELLM:
+000997 9702      	sbiw	tosl,2
+000998 9508      	ret
+                 
+                 ; 	>	( n1 n2 -- flag ) Compare
+                 ; 	compares two values (signed)
+                 
+000999 132a
+00099a 3e01      	COLON	1,">"
+                 GREATER:
+00099b 9129      	ld 		temp2, Y+
+00099c 9139      	ld 		temp3, Y+
+00099d 1728      	cp 		temp2, tosl
+00099e 0739      	cpc 	temp3, tosh
+00099f c00d      	rjmp 	DGRE1
+                 
+                 ; 	D>	( d1 d2 -- flag ) Compare
+                 ; 	compares two d values (signed)
+                 
+0009a0 1334
+0009a1 4402
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3136): macro 'COLON' called here
+0009a2 003e      	COLON	2,"D>"
+                 DGRE:	
+0009a3 9109      	ld 		temp0, Y+
+0009a4 9119      	ld 		temp1, Y+
+0009a5 9129      	ld 		temp2, Y+
+0009a6 9139      	ld 		temp3, Y+
+0009a7 90e9      	ld 		temp4, Y+
+0009a8 90f9      	ld 		temp5, Y+
+0009a9 16e0      	cp 		temp4, temp0
+0009aa 06f1      	cpc 	temp5, temp1
+0009ab 0728      	cpc 	temp2, tosl
+0009ac 0739      	cpc 	temp3, tosh
+                 DGRE1:
+0009ad 01c1      	movw 	tosl,zerol
+0009ae f01c      	brlt 	DGRE2
+0009af f011      	brbs 	1, DGRE2
+0009b0 9701      	sbiw 	tosl,1
+0009b1 9508      	ret
+                 DGRE2:
+0009b2 9508      	ret
+                 
+                 ; 	D+	( d1 d2 -- d3) Arithmetics
+                 ; 	add double cell values
+                 
+0009b3 1342
+0009b4 4402
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3160): macro 'COLON' called here
+0009b5 002b      	COLON	2,"D+"
+                 DPLUS:
+0009b6 9129      	ld 		temp2, Y+
+0009b7 9139      	ld 		temp3, Y+
+0009b8 90e9      	ld 		temp4, Y+
+0009b9 90f9      	ld 		temp5, Y+
+0009ba 9149      	ld 		temp6, Y+
+0009bb 9159      	ld 		temp7, Y+
+0009bc 0f24      	add 	temp2, temp6
+0009bd 1f35      	adc 	temp3, temp7
+0009be 1d8e      	adc 	tosl, temp4
+0009bf 1d9f      	adc 	tosh, temp5
+0009c0 933a      	st 		-Y, temp3
+0009c1 932a      	st 		-Y, temp2
+0009c2 9508      	ret
+                 
+                 ; 	D-	( d1 d2 -- d3 ) Arithmetics
+                 ; 	subtract double cell values
+                 
+0009c3 1368
+0009c4 4402
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3179): macro 'COLON' called here
+0009c5 002d      	COLON	2,"D-"
+                 DMINUS:
+0009c6 9129      	ld 		temp2, Y+
+0009c7 9139      	ld 		temp3, Y+
+0009c8 90e9      	ld 		temp4, Y+
+0009c9 90f9      	ld 		temp5, Y+
+0009ca 9149      	ld 		temp6, Y+
+0009cb 9159      	ld 		temp7, Y+
+0009cc 1b42      	sub 	temp6, temp2
+0009cd 0b53      	sbc 	temp7, temp3
+0009ce 0ae8      	sbc 	temp4, tosl
+0009cf 0af9      	sbc 	temp5, tosh
+0009d0 935a      	st 		-Y, temp7
+0009d1 934a      	st 		-Y, temp6
+0009d2 01c7      	movw 	tosl, temp4
+0009d3 9508      	ret
+                 
+                 ;	ALLOT	( n -- )
+                 ;	Allocate n bytes to the code dictionary.
+                 
+0009d4 1388
+0009d5 4105
+0009d6 4c4c
+0009d7 544f      	COLON	5,"ALLOT"
+                 ALLOT:
+0009d8 940e 036c 	CALL	DPP
+0009da 940c 04dd 	JMP		PSTOR
+                 
+                 ;   IALLOT	( n -- )
+                 ;	Allocate n bytes to the code dictionary.
+                 
+0009dc 13aa
+0009dd 4906
+0009de 4c41
+0009df 4f4c
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3207): macro 'COLON' called here
+0009e0 0054      	COLON	6,"IALLOT"
+                 IALLOT:
+0009e1 940e 0367 	CALL	CPP
+0009e3 940c 04dd 	JMP		PSTOR
+                 
+                 ;   ,	( w -- )
+                 ;	Compile an integer into the code dictionary.
+                 
+0009e5 13ba
+0009e6 2c01      	COLON	1,","
+                 COMMA:
+0009e7 940e 0367 	CALL	CPP
+0009e9 940e 01a2 	CALL	AT
+0009eb 940e 02da 	CALL	DUPP
+0009ed 940e 0992 	CALL	CELLP	;cell boundary
+0009ef 940e 0367 	CALL	CPP
+0009f1 940e 0198 	CALL	STORE
+0009f3 940c 01ff 	JMP		ISTOR
+                 
+                 ;   call,	( ca -- )
+                 ;	Assemble a call instruction to ca.
+                 
+0009f5 13cc
+0009f6 6305
+0009f7 6c61
+0009f8 2c6c      	CODE	5,"call,"
+                 CALLC:
+0009f9 940e 0142 	CALL	DOLIT
+0009fb 940e      	.DW		CALLL
+0009fc 940e 09e7 	CALL	COMMA
+0009fe cfe8      	RJMP	COMMA	;328 long call
+                 
+                 ;   [COMPILE]	( -- ; <string> )
+                 ;	Compile the next immediate word into code dictionary.
+                 
+0009ff 13ec
+000a00 5b89
+000a01 4f43
+000a02 504d
+000a03 4c49
+000a04 5d45      	COLON	IMEDD+9,"[COMPILE]"
+                 BCOMP:
+000a05 940e 08b4 	CALL	TICK
+000a07 940e 037d 	CALL	TWOSL
+000a09 cfef      	RJMP	CALLC
+                 
+                 ;   COMPILE	( -- )
+                 ;	Compile the next address in colon list to code dictionary.
+                 
+000a0a 1400
+000a0b 4347
+000a0c 4d4f
+000a0d 4950
+000a0e 454c      	COLON	COMPO+7,"COMPILE"
+                 COMPI:
+000a0f 940e 029f 	CALL	RFROM
+000a11 940e 0377 	CALL	CELLS
+000a13 940e 02da 	CALL	DUPP
+000a15 940e 01a2 	CALL	AT
+000a17 940e 09e7 	CALL	COMMA	;compile call instruction
+000a19 940e 0992 	CALL	CELLP
+000a1b 940e 02da 	CALL	DUPP
+000a1d 940e 01a2 	CALL	AT
+000a1f 940e 09e7 	CALL	COMMA	;compile address
+000a21 940e 0992 	CALL	CELLP
+000a23 940e 037d 	CALL	TWOSL
+000a25 940e 02b9 	CALL	TOR
+000a27 9508      	RET				;adjust return address
+                 
+                 ;   LITERAL	( w -- )
+                 ;	Compile tos to code dictionary as an integer literal.
+                 
+000a28 1416
+000a29 4c87
+000a2a 5449
+000a2b 5245
+000a2c 4c41      	COLON  IMEDD+7,"LITERAL" ; FIXED 2012/9/25
+                 LITER: 
+000a2d 940e 0142 	CALL	DOLIT
+000a2f 0142      	.DW		DOLIT
+000a30 940e 09f9 	CALL	CALLC
+000a32 cfb4      	RJMP	COMMA
+                 
+                 ;   $,"	( -- )
+                 ;	Compile a literal string up to next " .
+                 
+000a33 1452
+000a34 2403      	CODE	3,'$'
+000a35 222c      	.DB		',','"'
+                 STRCQ:
+000a36 940e 0142 	CALL	DOLIT
+000a38 0022      	.DW		'"'
+000a39 940e 0747 	CALL	WORDD	;move string to code dictionary
+000a3b 940e 02da 	CALL	DUPP
+000a3d 940e 0298 	CALL	CAT
+000a3f 940e 037d 	CALL	TWOSL
+000a41 940e 02b9 	CALL	TOR
+                 STRCQ1:
+000a43 940e 02da 	CALL	DUPP
+000a45 940e 01a2 	CALL	AT
+000a47 940e 09e7 	CALL	COMMA
+000a49 940e 0992 	CALL	CELLP
+000a4b 940e 0153 	CALL	DONXT
+000a4d 0a43      	.DW		STRCQ1
+000a4e 940c 02d4 	JMP		DROP
+                 
+                 ;; Structures
+                 
+                 ;   BEGIN	( -- a )
+                 ;	Start an infinite or indefinite loop structure.
+                 
+000a50 1468
+000a51 4285
+000a52 4745
+000a53 4e49      	COLON	IMEDD+5,"BEGIN"
+                 BEGIN:
+000a54 940e 0367 	CALL	CPP
+000a56 940c 01a2 	JMP		AT
+                 
+                 ;   FOR	( -- a )
+                 ;	Start a FOR-NEXT loop structure in a colon definition.
+                 
+000a58 14a2
+000a59 4683
+000a5a 524f      	COLON	IMEDD+3,"FOR"
+                 FOR:
+000a5b 940e 0142 	CALL	DOLIT
+000a5d 02b9      	.DW		TOR
+000a5e 940e 09f9 	CALL	CALLC
+000a60 cff3      	RJMP	BEGIN
+                 
+                 ;   NEXT	( a -- )
+                 ;	Terminate a FOR-NEXT loop structure.
+                 
+000a61 14b2
+000a62 4e84
+000a63 5845
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3318): macro 'COLON' called here
+000a64 0054      	COLON	IMEDD+4,"NEXT"
+                 NEXT:
+000a65 940e 0142 	CALL	DOLIT
+000a67 0153      	.DW		DONXT
+000a68 940e 09f9 	CALL	CALLC
+000a6a 940e 037d 	CALL	TWOSL
+000a6c cf7a      	RJMP	COMMA
+                 
+                 ;   UNTIL	( a -- )
+                 ;	Terminate a BEGIN-UNTIL indefinite loop structure.
+                 
+000a6d 14c4
+000a6e 5585
+000a6f 544e
+000a70 4c49      	COLON	IMEDD+5,"UNTIL"
+                 UNTIL:
+000a71 940e 0142 	CALL	DOLIT
+000a73 016b      	.DW		QBRAN
+000a74 940e 09f9 	CALL	CALLC
+000a76 940e 037d 	CALL	TWOSL
+000a78 cf6e      	RJMP	COMMA
+                 
+                 ;   AGAIN	( a -- )
+                 ;	Terminate a BEGIN-AGAIN infinite loop structure.
+                 
+000a79 14dc
+000a7a 4185
+000a7b 4147
+000a7c 4e49      	COLON	IMEDD+5,"AGAIN"
+                 AGAIN:
+000a7d 940e 0142 	CALL	DOLIT
+000a7f 017a      	.DW		BRAN
+000a80 940e 09f9 	CALL	CALLC
+000a82 940e 037d 	CALL	TWOSL
+000a84 cf62      	RJMP	COMMA
+                 
+                 ;   IF	( -- A )
+                 ;	Begin a conditional branch structure.
+                 
+000a85 14f4
+000a86 4982
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3351): macro 'COLON' called here
+000a87 0046      	COLON	IMEDD+2,"IF"
+                 IFF:
+000a88 940e 0142 	CALL	DOLIT
+000a8a 016b      	.DW		QBRAN
+000a8b 940e 09f9 	CALL	CALLC
+000a8d 940e 0a54 	CALL	BEGIN
+000a8f 940e 0142 	CALL	DOLIT
+000a91 0002      	.DW		2
+000a92 cf4e      	RJMP	IALLOT
+                 
+                 ;   AHEAD	( -- A )
+                 ;	Compile a forward branch instruction.
+                 
+000a93 150c
+000a94 4185
+000a95 4548
+000a96 4441      	CODE	IMEDD+5,"AHEAD"
+                 AHEAD:
+000a97 940e 0142 	CALL	DOLIT
+000a99 017a      	.DW		BRAN
+000a9a 940e 09f9 	CALL	CALLC
+000a9c 940e 0a54 	CALL	BEGIN
+000a9e 940e 0142 	CALL	DOLIT
+000aa0 0002      	.DW		2
+000aa1 940c 09e1 	JMP		IALLOT
+                 
+                 ;   REPEAT	( A a -- )
+                 ;	Terminate a BEGIN-WHILE-REPEAT indefinite loop.
+                 
+000aa3 1528
+000aa4 5286
+000aa5 5045
+000aa6 4145
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3377): macro 'COLON' called here
+000aa7 0054      	COLON	IMEDD+6,"REPEAT"
+                 REPEA:
+000aa8 940e 0a7d 	CALL	AGAIN
+000aaa 940e 0a54 	CALL	BEGIN
+000aac 940e 037d 	CALL	TWOSL
+000aae 940e 02e1 	CALL	SWAPP
+000ab0 940c 01ff 	JMP		ISTOR
+                 
+                 ;   THEN	( A -- )
+                 ;	Terminate a conditional branch structure.
+                 
+000ab2 1548
+000ab3 5484
+000ab4 4548
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3388): macro 'COLON' called here
+000ab5 004e      	COLON	IMEDD+4,"THEN"
+                 THENN:
+000ab6 940e 0a54 	CALL	BEGIN
+000ab8 940e 037d 	CALL	TWOSL
+000aba 940e 02e1 	CALL	SWAPP
+000abc 940c 01ff 	JMP		ISTOR
+                 
+                 ;   AFT	( a -- a A )
+                 ;	Jump to THEN in a FOR-AFT-THEN-NEXT loop the first time through.
+                 
+000abe 1566
+000abf 4183
+000ac0 5446      	COLON	IMEDD+3,"AFT"
+                 AFT:
+000ac1 940e 02d4 	CALL	DROP
+000ac3 940e 0a97 	CALL	AHEAD
+000ac5 940e 0a54 	CALL	BEGIN
+000ac7 940c 02e1 	JMP		SWAPP
+                 
+                 ;   ELSE	( A -- A )
+                 ;	Start the false clause in an IF-ELSE-THEN structure.
+                 
+000ac9 157e
+000aca 4584
+000acb 534c
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3408): macro 'COLON' called here
+000acc 0045      	COLON	IMEDD+4,"ELSE"
+                 ELSEE:
+000acd 940e 0a97 	CALL	AHEAD
+000acf 940e 02e1 	CALL	SWAPP
+000ad1 940c 0ab6 	JMP		THENN
+                 
+                 ;   WHILE	( a -- A a )
+                 ;	Conditional branch out of a BEGIN-WHILE-REPEAT loop.
+                 
+000ad3 1594
+000ad4 5785
+000ad5 4948
+000ad6 454c      	COLON	IMEDD+5,"WHILE"
+                 WHILE:
+000ad7 940e 0a88 	CALL	IFF
+000ad9 940c 02e1 	JMP		SWAPP
+                 
+                 ;   ABORT"	( -- ; <string> )
+                 ;	Conditional abort with an error message.
+                 
+000adb 15a8
+000adc 4186
+000add 4f42
+000ade 5452      	COLON	IMEDD+6,"ABORT"
+C:\ksanapc\ide328_2\328eForth.asm(3426): warning: .cseg .db misalignment - padding zero byte
+000adf 0022      	.DB		'"'
+                 ABRTQ:
+000ae0 940e 0142 	CALL	DOLIT
+000ae2 0845      	.DW		ABORQ
+000ae3 940e 09f9 	CALL	CALLC
+000ae5 940e 0a36 	CALL	STRCQ
+000ae7 9508      	RET
+                 
+                 ;   $"	( -- ; <string> )
+                 ;	Compile an inline string literal.
+                 
+000ae8 15b8
+000ae9 2482      	COLON	IMEDD+2,'$'
+C:\ksanapc\ide328_2\328eForth.asm(3438): warning: .cseg .db misalignment - padding zero byte
+000aea 0022      	.DB		'"'
+                 STRQ:
+000aeb 940e 0142 	CALL	DOLIT
+000aed 067e      	.DW		STRQP
+000aee 940e 09f9 	CALL	CALLC
+000af0 940e 0a36 	CALL	STRCQ
+000af2 9508      	RET
+                 
+                 ;   ."	( -- ; <string> )
+                 ;	Compile an inline string literal to be typed out at run time.
+                 
+000af3 15d2
+000af4 2e82      	COLON	IMEDD+2,'.'
+C:\ksanapc\ide328_2\328eForth.asm(3450): warning: .cseg .db misalignment - padding zero byte
+000af5 0022      	.DB		'"'
+                 DOTQ:
+000af6 940e 0142 	CALL	DOLIT
+000af8 0683      	.DW		DOTQP
+000af9 940e 09f9 	CALL	CALLC
+000afb 940e 0a36 	CALL	STRCQ
+000afd 9508      	RET
+                 
+                 ;; Name compiler
+                 
+                 ;   ?UNIQUE	( a -- a )
+                 ;	Display a warning message if the word already exists.
+                 
+000afe 15e8
+000aff 3f07
+000b00 4e55
+000b01 5149
+000b02 4555      	CODE	7,"?UNIQUE"
+                 UNIQU:
+000b03 940e 02da 	CALL	DUPP
+000b05 940e 07b5 	CALL	NAMEQ	;?name exists
+000b07 940e 016b 	CALL	QBRAN
+000b09 0b16      	.DW		UNIQ1
+000b0a 940e 0683 	CALL	DOTQP	;redefinitions are OK
+000b0c 2007
+000b0d 6572
+000b0e 6544
+000b0f 2066      	.DB		7," reDef "	;but the user should be warned
+000b10 940e 02eb 	CALL	OVER
+000b12 940e 04e7 	CALL	COUNT
+000b14 940e 0649 	CALL	TYPES	;just in case its not planned
+                 UNIQ1:
+000b16 940c 02d4 	JMP		DROP
+                 
+                 ;   $,n	( na -- )
+                 ;	Build a new dictionary name using the string at na.
+                 
+000b18 15fe
+000b19 2403
+000b1a 6e2c      	CODE	3,"$,n"
+                 SNAME:
+000b1b 940e 02da 	CALL	DUPP
+000b1d 940e 0298 	CALL	CAT	;?null input
+000b1f 940e 016b 	CALL	QBRAN
+000b21 0b47      	.DW		SNAM2
+000b22 940e 0b03 	CALL	UNIQU	;?redefinition
+000b24 940e 0372 	CALL	LAST
+000b26 940e 01a2 	CALL	AT
+000b28 940e 09e7 	CALL	COMMA	;compile link 
+000b2a 940e 0367 	CALL	CPP
+000b2c 940e 01a2 	CALL	AT
+000b2e 940e 0372 	CALL	LAST
+000b30 940e 0198 	CALL	STORE	;save new nfa in LAST	
+000b32 940e 02da 	CALL	DUPP
+000b34 940e 0298 	CALL	CAT
+000b36 940e 037d 	CALL	TWOSL	;na count/2
+000b38 940e 02b9 	CALL	TOR
+                 SNAME1:
+000b3a 940e 02da 	CALL	DUPP
+000b3c 940e 01a2 	CALL	AT
+000b3e 940e 09e7 	CALL	COMMA	;compile name
+000b40 940e 0992 	CALL	CELLP
+000b42 940e 0153 	CALL 	DONXT
+000b44 0b3a      	.DW		SNAME1
+000b45 940c 02d4 	JMP		DROP
+                 SNAM2:
+000b47 940e 067e 	CALL	STRQP
+000b49 2005
+000b4a 616e
+000b4b 656d      	.DB		5," name"	;null input
+000b4c 940c 0820 	JMP		ERROR
+                 
+                 ;; FORTH compiler
+                 
+                 ;   $COMPILE	( a -- )
+                 ;	Compile next word to code dictionary as a token or literal.
+                 
+000b4e 1632
+000b4f 2408
+000b50 4f43
+000b51 504d
+000b52 4c49
+C:\ksanapc\ide328_2\328eForth.asm(160): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3516): macro 'CODE' called here
+000b53 0045      	CODE	8,"$COMPILE"
+                 SCOMP:
+000b54 940e 07b5 	CALL	NAMEQ
+000b56 940e 0394 	CALL	QDUP	;?defined
+000b58 940e 016b 	CALL	QBRAN
+000b5a 0b6b      	.DW		SCOM2
+000b5b 940e 01a9 	CALL	IAT
+000b5d 940e 0142 	CALL	DOLIT
+000b5f 0080      	.DW		IMEDD
+000b60 940e 02fb 	CALL	ANDD	;?immediate
+000b62 940e 016b 	CALL	QBRAN
+000b64 0b67      	.DW		SCOM1
+000b65 940c 0188 	JMP		EXECU
+                 SCOM1:
+000b67 940e 037d 	CALL	TWOSL
+000b69 940c 09f9 	JMP		CALLC
+                 SCOM2:
+000b6b 940e 05dd 	CALL	NUMBQ
+000b6d 940e 016b 	CALL	QBRAN
+000b6f 0b72      	.DW		SCOM3
+000b70 940c 0a2d 	JMP		LITER
+                 SCOM3:
+000b72 940c 0820 	JMP		ERROR	;error
+                 
+                 ;   OVERT	( -- )
+                 ;	Link a new word into the current vocabulary.
+                 
+000b74 169e
+000b75 4f05
+000b76 4556
+000b77 5452      	COLON	5,"OVERT"
+                 OVERT:
+000b78 940e 0372 	CALL	LAST
+000b7a 940e 01a2 	CALL	AT
+000b7c 940e 0362 	CALL	CNTXT
+000b7e 940c 0198 	JMP		STORE
+                 
+                 ;   ;	( -- )
+                 ;	Terminate a colon definition.
+                 
+000b80 16ea
+000b81 3bc1      	COLON	IMEDD+COMPO+1,";"
+                 SEMIS:
+000b82 940e 0142 	CALL	DOLIT
+000b84 9508      	.DW		RETT
+000b85 940e 09e7 	CALL	COMMA
+000b87 940e 086e 	CALL	LBRAC
+000b89 940c 0b78 	JMP		OVERT
+                 
+                 ;   ]	( -- )
+                 ;	Start compiling the words in the input stream.
+                 
+000b8b 1702
+000b8c 5d01      	COLON	1,"]"
+                 RBRAC:
+000b8d 940e 0142 	CALL	DOLIT
+000b8f 16a8      	.DW		SCOMP*2
+000b90 940e 0356 	CALL	TEVAL
+000b92 940c 0198 	JMP		STORE
+                 
+                 ;   :	( -- ; <string> )
+                 ;	Start a new colon definition using next word as its name.
+                 
+000b94 1718
+000b95 3a01      	COLON	1,":"
+                 COLONN:
+000b96 940e 0730 	CALL	TOKEN
+000b98 940e 0b1b 	CALL	SNAME
+000b9a 940c 0b8d 	JMP		RBRAC
+                 
+                 ;   IMMEDIATE	( -- )
+                 ;	Make the last compiled word an immediate word.
+                 
+000b9c 172a
+000b9d 4909
+000b9e 4d4d
+000b9f 4445
+000ba0 4149
+000ba1 4554      	COLON	9,"IMMEDIATE"
+                 IMMED:
+000ba2 940e 0142 	CALL	DOLIT
+000ba4 0080      	.DW		IMEDD
+000ba5 940e 0372 	CALL	LAST
+000ba7 940e 01a2 	CALL	AT
+000ba9 940e 01a9 	CALL	IAT
+000bab 940e 0303 	CALL	ORR
+000bad 940e 0372 	CALL	LAST
+000baf 940e 01a2 	CALL	AT
+000bb1 940c 01ff 	JMP		ISTOR
+                 
+                 ;; Defining words
+                 
+                 ;   CREATE	( -- ; <string> )
+                 ;	Compile a new array entry without allocating code space.
+                 
+000bb3 173a
+000bb4 4306
+000bb5 4552
+000bb6 5441
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3600): macro 'COLON' called here
+000bb7 0045      	COLON	6,"CREATE"
+                 CREAT:
+000bb8 940e 0730 	CALL	TOKEN
+000bba 940e 0b1b 	CALL	SNAME
+000bbc 940e 0b78 	CALL	OVERT
+000bbe 940e 0142  	CALL	DOLIT
+000bc0 0321      	.DW		DOVAR
+000bc1 940e 09f9 	CALL	CALLC
+000bc3 940e 036c 	CALL	DPP
+000bc5 940e 01a2 	CALL	AT
+000bc7 940c 09e7 	JMP		COMMA
+                 
+                 ;   CONSTANT	( n -- ; <string> )
+                 ;	Compile a constant.
+                 
+000bc9 1768
+000bca 4308
+000bcb 4e4f
+000bcc 5453
+000bcd 4e41
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3615): macro 'COLON' called here
+000bce 0054      	COLON	8,"CONSTANT"
+                 CONST:
+000bcf 940e 0730 	CALL	TOKEN
+000bd1 940e 0b1b 	CALL	SNAME
+000bd3 940e 0b78 	CALL	OVERT
+000bd5 940e 0142  	CALL	DOLIT
+000bd7 0321      	.DW		DOVAR
+000bd8 940e 09f9 	CALL	CALLC
+000bda 940c 09e7 	JMP		COMMA
+                 
+                 ;   VARIABLE	( -- ; <string> )
+                 ;	Compile a new variable uninitialized.
+                 
+000bdc 1794
+000bdd 5608
+000bde 5241
+000bdf 4149
+000be0 4c42
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3628): macro 'COLON' called here
+000be1 0045      	COLON	8,"VARIABLE"
+                 VARIA:
+000be2 940e 0bb8 	CALL	CREAT
+000be4 940e 0142 	CALL	DOLIT
+000be6 0002      	.DW		2
+000be7 940c 09d8 	JMP		ALLOT
+                 
+                 ; ======= M
+000be9 17ba
+000bea 2703
+000beb 4e43      	COLON	3,"'CN"
+                 TICKCN:
+000bec 940e 0730 	CALL	TOKEN
+000bee 940e 07b5 	CALL	NAMEQ	;?defined
+000bf0 940e 03b4 	CALL    DDUP
+000bf2 940e 016b 	CALL	QBRAN
+000bf4 08b9      	.DW		TICK1
+000bf5 940e 02d4     CALL    DROP  
+000bf7 9508      	RET				;yes, push code address
+                 TICK1CN:
+000bf8 940c 0820 	JMP	ERROR	;no, error
+                 
+000bfa 17d4
+000bfb 4f08
+000bfc 4550
+000bfd 5f4e
+000bfe 4e49
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3648): macro 'COLON' called here
+000bff 0054      	COLON	8,"OPEN_INT"
+                 OPEN_INT: 
+000c00 940e 0142 	CALL	DOLIT	
+000c02 005f      	.DW		$5F
+000c03 940e 0298     CALL    CAT
+000c05 940e 0142 	CALL	DOLIT	
+000c07 0080      	.DW		$80
+000c08 940e 0303 	CALL    ORR
+000c0a 940e 0142     CALL	DOLIT	
+000c0c 005f      	.DW		$5F
+000c0d 940e 028e     CALL	CSTOR
+000c0f 940e 0142 	CALL	DOLIT
+000c11 0064          .DW		$64
+000c12 940e 02b9 	CALL	TOR
+                 REDO:
+000c14 940e 0153 	CALL	DONXT   
+000c16 0c14          .DW		REDO
+                 
+000c17 940e 0142 	CALL	DOLIT	
+000c19 005f      	.DW		$5F
+000c1a 940e 0298     CALL    CAT
+000c1c 940e 0142 	CALL	DOLIT	
+000c1e 007f      	.DW		$7F
+000c1f 940e 02fb 	CALL    ANDD
+000c21 940e 0142     CALL	DOLIT	
+000c23 005f      	.DW		$5F
+000c24 940e 028e     CALL	CSTOR
+000c26 9508      	RET
+000c27 17f6
+000c28 5404
+000c29 5345
+C:\ksanapc\ide328_2\328eForth.asm(168): warning: .cseg .db misalignment - padding zero byte
+C:\ksanapc\ide328_2\328eForth.asm(3676): macro 'COLON' called here
+000c2a 0054      	COLON	4,"TEST"
+000c2b 940e 0372 	CALL	LAST
+000c2d 940e 01a2 	CALL	AT
+000c2f 940e 02da T1: CALL	DUPP
+000c31 940e 06a6 	CALL	DOT
+000c33 940e 0394 	CALL	QDUP
+000c35 940e 0628 	CALL	KEY
+000c37 940e 038b 	CALL	BLANK
+000c39 940e 03ed 	CALL	EQUAL
+000c3b 940e 02fb 	CALL	ANDD
+000c3d 940e 016b 	CALL	QBRAN
+000c3f 0c4d      	.DW		T2
+000c40 940e 02da 	CALL	DUPP
+000c42 940e 0630 	CALL	SPACE	
+000c44 940e 0925 	CALL	DOTID
+000c46 940e 0997 	CALL	CELLM
+000c48 940e 01a9 	CALL	IAT
+000c4a 940e 017a 	CALL	BRAN
+000c4c 0c2f      	.DW		T1
+000c4d 9508      T2:	RET
+                 
+                 ;============================================================================
+                 
+                 .EQU	LASTN	=	_LINK*2	;last name address in name dictionary
+                 
+                 .EQU	DTOP	=	$140	;next available memory in name dictionary
+                 .EQU	CTOP	=	pc*2	;next available memory in code dictionary
+                 ;===============================================================
+
+
+RESOURCE USE INFORMATION
+------------------------
+
+Notice:
+The register and instruction counts are symbol table hit counts,
+and hence implicitly used resources are not counted, eg, the
+'lpm' instruction without operands implicitly uses r0 and z,
+none of which are counted.
+
+x,y,z are separate entities in the symbol table and are
+counted separately from r26..r31 here.
+
+.dseg memory usage only counts static data declared with .byte
+
+ATmega328P register use summary:
+r0 :   7 r1 :   4 r2 :   6 r3 :   3 r4 :  10 r5 :   0 r6 :   0 r7 :   0 
+r8 :   0 r9 :   0 r10:   1 r11:   1 r12:   0 r13:   0 r14:  10 r15:   8 
+r16:  20 r17:  13 r18:  21 r19:  20 r20:  13 r21:   8 r22:   4 r23:   0 
+r24: 144 r25:  73 r26:  42 r27:  26 r28:   4 r29:   2 r30:  36 r31:  21 
+x  :   3 y  : 128 z  :  23 
+Registers used: 27 out of 35 (77.1%)
+
+ATmega328P instruction use summary:
+.lds  :   0 .sts  :   0 adc   :  10 add   :   6 adiw  :  27 and   :   2 
+andi  :   1 asr   :   2 bclr  :   0 bld   :   0 brbc  :   0 brbs  :   1 
+brcc  :   0 brcs  :   1 break :   0 breq  :   2 brge  :   2 brhc  :   0 
+brhs  :   0 brid  :   0 brie  :   0 brlo  :   0 brlt  :   1 brmi  :   0 
+brne  :   3 brpl  :   0 brsh  :   0 brtc  :   0 brts  :   0 brvc  :   0 
+brvs  :   0 bset  :   0 bst   :   0 call  : 206 cbi   :   0 cbr   :   0 
+clc   :   0 clh   :   0 cli   :   0 cln   :   0 clr   :  16 cls   :   0 
+clt   :   0 clv   :   0 clz   :   0 com   :   2 cp    :   3 cpc   :   6 
+cpi   :   0 cpse  :   0 dec   :   1 eor   :   2 fmul  :   0 fmuls :   0 
+fmulsu:   0 icall :   0 ijmp  :   0 in    :   3 inc   :   1 jmp   :  36 
+ld    :  88 ldd   :   2 ldi   :  20 lds   :   3 lpm   :  17 lsl   :   8 
+lsr   :   0 mov   :   2 movw  :  29 mul   :   4 muls  :   0 mulsu :   0 
+neg   :   0 nop   :   0 or    :   4 ori   :   0 out   :   7 pop   :  26 
+push  :  26 rcall : 843 ret   :  93 reti  :   2 rjmp  : 127 rol   :  12 
+ror   :   4 sbc   :   5 sbci  :   1 sbi   :   0 sbic  :   0 sbis  :   0 
+sbiw  :  17 sbr   :   0 sbrc  :   1 sbrs  :   2 sec   :   0 seh   :   0 
+sei   :   0 sen   :   0 ser   :   2 ses   :   0 set   :   0 sev   :   0 
+sez   :   0 sleep :   0 spm   :   2 st    :  46 std   :   2 sts   :   5 
+sub   :   3 subi  :   3 swap  :   0 tst   :   1 wdr   :   0 
+Instructions used: 54 out of 113 (47.8%)
+
+ATmega328P memory use summary [bytes]:
+Segment   Begin    End      Code   Data   Used    Size   Use%
+---------------------------------------------------------------
+[.cseg] 0x000000 0x007fe2   3978   2134   6112   32768  18.7%
+[.dseg] 0x000100 0x000100      0      0      0    2048   0.0%
+[.eseg] 0x000000 0x000000      0      0      0    1024   0.0%
+
+Assembly complete, 0 errors, 108 warnings

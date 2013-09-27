@@ -1,0 +1,28 @@
+<!DOCTYPE html><!-- C:\ksanapc\atmegaIDE\index.html -->
+<!-- 20130927 yap & sam 試用 hithub 以 node_webkit aura-widget 建構 IDE -->
+<html><head>
+    <!-- 採用 utf-8 以便 中文 顯示於 chrome 網頁 -->
+    <meta charset='utf-8'>
+    <!-- atmega eforth IDE (node_webkit aura-widget) project -->
+    <title>atMega eforth IDE</title>
+    <!-- 採用 bootstrap 網頁排版 -->
+    <link rel="stylesheet"
+        href="../node_webkit/css/bootstrap.css">
+    <!-- 經由 node_webkit 的 ksanajslib, 自動啟動 index.js -->
+    <script
+        src="../node_webkit/jslib/require.js"
+        data-main="../node_webkit/jslib/ksanajslib"></script>
+    <!-- 自訂 status-widget/templet.tmpl 樣版 span 物件 id='trying' 的紅色 效果 -->
+    <link href='./index.css' rel='stylesheet'> 
+</head><body>
+    <div class="mainview" id='mainview'>
+        <!-- connect serial port, config.json for port and baud -->
+        <div data-aura-widget="connect-widget"></div>
+        <!-- web page showing connect status -->
+        <div data-aura-widget="status-widget"></div>
+        <!-- read serial port and output to console -->
+        <div data-aura-widget="console-out-widget"></div>
+        <!-- input command and write to serial port -->
+        <div data-aura-widget="console-in-widget"></div>
+    </div>
+</body></html>
