@@ -3,7 +3,7 @@
     FOR DUP 9 R@ - x
     NEXT DROP
   NEXT ;
-  t 
+t 
 \ test.f
 DECIMAL
 \ FORGET V
