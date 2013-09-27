@@ -1,0 +1,21 @@
+{
+	"files":[
+		"atmega_ide/aura_components",
+		"atmega_ide/css",
+		"atmega_ide/328eforth",
+		"atmega_ide/index.css",
+		"atmega_ide/index.js",
+		"atmega_ide/index.html",
+		"atmega_ide/package.json",
+		"atmega_ide/LICENSE",
+		"atmega_ide/README.md",
+		"atmega_ide/config.json",
+		"node_modules/serialport"
+	],
+	"osx" :[
+		"atmega_ide/run.command"
+	],
+	"win32" :[
+		"atmega_ide/run.cmd"
+	]	
+}
