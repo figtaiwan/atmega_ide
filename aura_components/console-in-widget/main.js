@@ -1,3 +1,4 @@
+// C:\ksanapc\atmega_ide\aura_components\console-in-widget\main.js
 define(['text!./template.tmpl','text!../config.json','backbone'], 
  function(template,config,Backbone) {
   return { type:"Backbone",
@@ -8,16 +9,17 @@ define(['text!./template.tmpl','text!../config.json','backbone'],
         "change #inp_command":"command_change",
         "keydown #inp_command":"command_keydown",
         "keypress #inp_command":"command_keypress",
+        "keyup #inp_command":"command_keyup",
         "click #btn_sendcommand":"commandsend_click",
         "keydown #inp_filename":"filename_keydown",
         "click #btn_transferfile":"filetransfer_click"
       },
       command_change:function() {
         var $cmd=this.$el.find("#inp_command")
-        var $siz=this.$el.find("#command_size")
-        var n=0,t=cmd.val()
+        var $len=this.$el.find("#command_len")
+        var n=0,t=$cmd.val()
         for(var i=0;i<t.length;i++)n+=t.charCodeAt(i)>256?3:1
-        $siz.html(n)
+        $len.html(n)
       },
       command_keydown:function(e) {
         var k=e.keyCode
@@ -26,13 +28,23 @@ define(['text!./template.tmpl','text!../config.json','backbone'],
         } else if (k==27) {
           $cmd=this.$el.find('#inp_command')
           $cmd.val('')
-          this.sandbox.emit("command",String.fromCharCode(e.keyCode)+"\r")
+          this.sandbox.emit("command",String.fromCharCode(e.keyCode))
         }
       },
       command_keypress:function(e) {
         var k=e.keyCode
         if (k==26||k==17) {
-          this.sandbox.emit("command",String.fromCharCode(e.keyCode)+"\r")
+          this.sandbox.emit("command",String.fromCharCode(e.keyCode))
+        }
+      },
+      command_up:function(e) {
+        var k=e.keyCode
+        if (k>31||k===8) {
+          var $cmd=this.$el.find("#inp_command")
+          var $len=this.$el.find("#command_len")
+          var n=0,t=$cmd.val()
+          for(var i=0;i<t.length;i++)n+=t.charCodeAt(i)>256?3:1
+          $len.html(n)
         }
       },
       commandsend_click:function() {

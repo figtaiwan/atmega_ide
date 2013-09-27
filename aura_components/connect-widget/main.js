@@ -1,4 +1,4 @@
-// C:\ksanapc\atmegaIDE\aura_components\connect-widgit\main.js 資料夾
+// C:\ksanapc\atmega_ide\aura_components\connect-widgit\main.js
 define(['text!../config.json'], function(config) {
   // 參照 C:\ksanapc\atmegaIDE\config.json 設定 port 與 baudrate
   return { type:"Backbone",
@@ -57,18 +57,34 @@ define(['text!../config.json'], function(config) {
             })
         })
     },
-    sendCommand: function() { var tc=this.commands, td=this.data
-        if (   tc                   // 待給 serial port 傳送的 指令 array
+    sendCommand: function() {
+        var tc=this.commands, td=this.data
+        if (   tc
+            && tc.length
+            && tc[tc.length-1].length===1
+            && tc[tc.length-1].charCodeAt(0)===27
+        ) {
+            this.serialport.write(tc[tc.length-1])
+            this.commands=[]
+            this.sandbox.emit("data",$('#consoleTmp').html())
+            this.data=new Buffer(0) 
+        } else if (
+               tc                   // 待給 serial port 傳送的 指令 array
             && tc.length            // 指令 array 長度非 0
             && td                   // 累積 serial port 接收的 資訊 buffer
             && td[td.length-1]===6  // 資訊結束 等候指令
         ) {
-            var cmd=tc.shift()      // 依序 逐列 取出 指令
-            if (cmd.length>79) {
+            var cmd=tc.shift(),n=0  // 依序 逐列 取出 指令
+            for(var i=0;i<cmd.length;i++) {
+                n+=cmd.charCodeAt(i)>256?3:1
+                if (n>79)
+                    break
+            }
+            if (n>79) {
                 cmd='<font color=red>輸入列不能太長</font>\r\n'
-                    +cmd.substr(0,79)
+                    +cmd.substr(0,i)
                     +'<font color=red>'
-                    +cmd.substr(79)
+                    +cmd.substr(i)
                     +'</font>'
                 this.sandbox.emit("data",cmd)
                 this.commands=[]
@@ -94,5 +110,5 @@ define(['text!../config.json'], function(config) {
         // 嘗試每秒與 serial port 連線
         that.timer=setInterval(function(){that.tryopen()}, 1000)
     }
-  }
-});
+
+}});

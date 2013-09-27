@@ -1,2 +1,2 @@
 cd ..
-@nwd atmegaIDE 
+@nwd atmega_ide 

@@ -1,3 +1,4 @@
+// C:\ksanapc\atmega_ide\aura_components\status-widget\main.js
 define(['underscore','text!./template.tmpl','backbone'], 
  function(_,template,Backbone) {
   return { type:"Backbone",

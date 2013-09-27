@@ -1,3 +1,4 @@
+// C:\ksanapc\atmega_ide\aura_components\console-out-widget\main.js
 define(['text!./template.tmpl','backbone'], 
  function(template,Backbone) {
   return { type:"Backbone",

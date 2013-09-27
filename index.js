@@ -1,3 +1,4 @@
+// C:\ksanapc\atmega_ide\index.js
 define(['aura'], function(Aura) {
 	console.log(Date()+' === loading index.js')
 	Aura({debug:{enable:true}})
