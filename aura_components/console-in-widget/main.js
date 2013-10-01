@@ -59,24 +59,10 @@ define(['text!./template.tmpl','text!../config.json','backbone'],
         }
       },
       filetransfer_click:function(e) {
-        $file=this.$el.find("#inp_filename")
-        this.filename=JSON.parse(config).system+'\\'+$file.val()
-        this.commands=this.fs.readFileSync(this.filename).toString().split(/\r\n/)
-        this.filetransfer()
+        var filename=this.$el.find("#inp_filename").val()
+        this.sandbox.emit("file",filename)
       },
-      filetransfer:function() {
-        while (this.commands&&this.commands.length) {
-          var cmd=this.commands.shift()
-          $cmd=this.$el.find('#inp_command')
-          $cmd.val(cmd)
-//        this.sandbox.emit('data',cmd+'\r\n')
-          this.commandsend_click()
-        }
-      },
-/*    inp_command_focus: function() {
-        $("#inp_command")[0].focus() // 確定 指令輸入格 優先
-      },
-*/    initialize: function() {
+      initialize: function() {
         this.fs=require('fs')
         this.render()
       }

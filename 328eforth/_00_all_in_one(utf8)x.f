@@ -17,7 +17,7 @@ HEX
  CR
  ." ERROR#02 : 編譯錯誤 ! 請按 ESC 繼續 " 
 
- BEGIN 
+ BEGIN 6 EMIT
  KEY DUP   D = IF ." ." 7 EMIT   THEN 
   1B = 
  UNTIL ; FLUSH

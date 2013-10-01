@@ -16,6 +16,6 @@
 		"atmega_ide/run.command"
 	],
 	"win32" :[
-		"atmega_ide/run.cmd"
+		"atmega_ide/run.bat"
 	]	
 }

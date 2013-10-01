@@ -1,5 +1,5 @@
 {
-	"port":		"com5",
+	"port":		"com32",
 	"baudrate":	19200,
 	"system":	"328eforth"
 }
