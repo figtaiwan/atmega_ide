@@ -4,6 +4,7 @@
 		"atmega_ide/css",
 		"atmega_ide/328eforth",
 		"atmega_ide/index.css",
+		"atmega_ide/lib.js",
 		"atmega_ide/index.js",
 		"atmega_ide/index.html",
 		"atmega_ide/package.json",
